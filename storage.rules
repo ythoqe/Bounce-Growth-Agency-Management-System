@@ -1,0 +1,159 @@
+rules_version = '2';
+
+/**
+ * Bounce Growth | Agency Management System
+ * Production Cloud Storage Security Rules
+ * Target Bucket: rational-chassis-j8chg.firebasestorage.app
+ * Target Firestore DB: ai-studio-bouncegrowthagen-ec890a0b-3105-4a18-b579-f894ac402288
+ *
+ * Security Architecture:
+ * - Agency Internal Assets: Strictly limited to Admin & authorized Team Members.
+ * - Client Uploads: Tenant-isolated; accessible only to Admin, assigned Team Specialists, and verified Client owners.
+ * - Profile Avatars: Self-service write bounded by owner UID, readable by authenticated users.
+ * - Strict Size Limits: 50MB (agency assets), 25MB (client uploads), 5MB (avatars).
+ * - MIME Type Allowlisting: Enforces valid business documents, spreadsheets, images, and configs. Rejects executables & HTML scripts.
+ * - Default Deny: All unmapped paths are closed.
+ */
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Default deny catch-all
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Core Identity & Authentication Primitives
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Verified Bootstrap Admin (Founder: hmmojjammalhoq@gmail.com)
+    function isBootstrapAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'hmmojjammalhoq@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    // Cross-Service Firestore Lookups
+    // Targets the provisioned database ID
+    function firestoreDoc(path) {
+      return firestore.get(/databases/ai-studio-bouncegrowthagen-ec890a0b-3105-4a18-b579-f894ac402288/documents/$(path));
+    }
+
+    function firestoreDocExists(path) {
+      return firestore.exists(/databases/ai-studio-bouncegrowthagen-ec890a0b-3105-4a18-b579-f894ac402288/documents/$(path));
+    }
+
+    // Authoritative user profile verification from Firestore /users/{uid}
+    function getUserRecord() {
+      return firestoreDoc('users/' + request.auth.uid).data;
+    }
+
+    function hasValidUserRecord() {
+      return isSignedIn() && firestoreDocExists('users/' + request.auth.uid);
+    }
+
+    // Admin role: Bootstrap admin or Firestore active admin record
+    function isAdmin() {
+      return isSignedIn() && (
+        isBootstrapAdmin() ||
+        (hasValidUserRecord() && getUserRecord().role == 'admin' && getUserRecord().status == 'active')
+      );
+    }
+
+    // Team Member: Agency specialist (Admin or active team record)
+    function isTeamMember() {
+      return isSignedIn() && (
+        isAdmin() ||
+        (hasValidUserRecord() && getUserRecord().role == 'team' && getUserRecord().status == 'active')
+      );
+    }
+
+    // Team Member Assignment: Must be assigned to this specific client in /clients/{clientId}.assignedSpecialists
+    function isAssignedSpecialist(clientId) {
+      return isTeamMember() && (
+        isAdmin() ||
+        (
+          firestoreDocExists('clients/' + clientId) &&
+          request.auth.uid in firestoreDoc('clients/' + clientId).data.assignedSpecialists
+        )
+      );
+    }
+
+    // Client Identity & Strict Isolation:
+    // User profile in Firestore must be role == 'client', status == 'active', and have matching clientId.
+    // Client-supplied claims are NEVER trusted.
+    function isAuthorizedClient(clientId) {
+      return isSignedIn() &&
+        hasValidUserRecord() &&
+        getUserRecord().role == 'client' &&
+        getUserRecord().status == 'active' &&
+        getUserRecord().clientId == clientId;
+    }
+
+    // Upload Validation Guards
+    function isValidSize(maxBytes) {
+      return request.resource.size <= maxBytes;
+    }
+
+    function isSafeAgencyMime() {
+      return request.resource.contentType.matches(
+        'application/pdf|application/json|image/(png|jpeg|webp|svg\\+xml)|text/(csv|plain)|application/vnd.ms-excel|application/vnd.openxmlformats-officedocument.*|application/zip'
+      );
+    }
+
+    function isSafeClientUploadMime() {
+      return request.resource.contentType.matches(
+        'application/pdf|application/json|image/(png|jpeg|webp)|text/csv|application/vnd.ms-excel|application/vnd.openxmlformats-officedocument.*|text/plain'
+      );
+    }
+
+    function isSafeAvatarMime() {
+      return request.resource.contentType.matches('image/(png|jpeg|webp|jpg)');
+    }
+
+    // =========================================================================
+    // Boundary 1: Agency Internal Assets (/agency_assets/**)
+    // Accessible only to agency staff (Admin + active Team Members).
+    // Clients have zero access. Unauthenticated access is denied.
+    // =========================================================================
+    match /agency_assets/{allPaths=**} {
+      allow read: if isTeamMember();
+      allow create, update: if isTeamMember() &&
+        isValidSize(50 * 1024 * 1024) &&
+        isSafeAgencyMime();
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
+    // Boundary 2: Client Uploads & Deliverables (/client_uploads/{clientId}/**)
+    // - Admin: Agency-wide access
+    // - Team Members: Accessible ONLY if assigned to this clientId
+    // - Clients: Accessible ONLY if authorized for their own clientId
+    // Max size: 25MB. Safe MIME types enforced.
+    // =========================================================================
+    match /client_uploads/{clientId}/{allPaths=**} {
+      allow read: if isAdmin() || isAssignedSpecialist(clientId) || isAuthorizedClient(clientId);
+      allow create, update: if (isAdmin() || isAssignedSpecialist(clientId) || isAuthorizedClient(clientId)) &&
+        isValidSize(25 * 1024 * 1024) &&
+        isSafeClientUploadMime();
+      allow delete: if isAdmin() || isAssignedSpecialist(clientId);
+    }
+
+    // =========================================================================
+    // Boundary 3: Profile Avatars (/avatars/{userId}/**)
+    // - Read: Signed-in users (for navigation headers and team roster rendering)
+    // - Write: Strictly the owner user (request.auth.uid == userId) or Admin
+    // Max size: 5MB. Images only (PNG, JPEG, WEBP).
+    // =========================================================================
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow create, update: if (isAdmin() || (isSignedIn() && request.auth.uid == userId)) &&
+        isValidSize(5 * 1024 * 1024) &&
+        isSafeAvatarMime();
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+    }
+  }
+}

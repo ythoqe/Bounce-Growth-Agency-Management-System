@@ -1,0 +1,367 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with role-based access attributes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email", "description": "Email address" },
+        "displayName": { "type": "string", "maxLength": 100, "description": "Full name" },
+        "role": { "type": "string", "enum": ["admin", "team", "client"], "description": "RBAC user role" },
+        "status": { "type": "string", "enum": ["active", "suspended", "invited"] },
+        "clientId": { "type": "string", "description": "Associated client ID if role is client" },
+        "title": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "displayName", "role", "status"]
+    },
+    "Client": {
+      "title": "Client Organization",
+      "description": "Client business profile managed by Bounce Growth",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessName": { "type": "string", "maxLength": 120 },
+        "website": { "type": "string", "maxLength": 255 },
+        "country": { "type": "string", "maxLength": 60 },
+        "timezone": { "type": "string", "maxLength": 60 },
+        "status": { "type": "string", "enum": ["lead", "onboarding", "active", "paused", "churned"] },
+        "monthlyRetainer": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "BDT"] },
+        "assignedManagerId": { "type": "string" },
+        "internalNotes": { "type": "string", "maxLength": 2000, "description": "Strictly internal notes hidden from clients" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["businessName", "status", "monthlyRetainer", "currency"]
+    },
+    "Project": {
+      "title": "Agency Project",
+      "description": "Project deliverables and campaign setups",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "serviceCategory": { "type": "string" },
+        "status": { "type": "string", "enum": ["planning", "in_progress", "in_review", "completed", "on_hold"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "leadSpecialistId": { "type": "string" },
+        "clientVisible": { "type": "boolean" },
+        "progressPercentage": { "type": "number" },
+        "startDate": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientId", "name", "serviceCategory", "status", "leadSpecialistId", "clientVisible"]
+    },
+    "Task": {
+      "title": "Agency Task",
+      "description": "Actionable task for tracking setup, campaigns, or audits with client visibility controls",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "status": { "type": "string", "enum": ["todo", "in_progress", "in_review", "completed", "cancelled"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "progressPercentage": { "type": "number" },
+        "assignedTeamMembers": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "clientVisible": { "type": "boolean" },
+        "isArchived": { "type": "boolean" },
+        "startDate": { "type": "string" },
+        "deadline": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "clientId", "title", "status", "priority", "createdBy", "clientVisible"]
+    },
+    "Deliverable": {
+      "title": "Deliverable Submission",
+      "description": "Milestone submission or report deliverable linked to a task with client approval flow",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "taskId": { "type": "string" },
+        "taskTitle": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "externalUrl": { "type": "string", "maxLength": 500 },
+        "submittedBy": { "type": "string" },
+        "submittedByName": { "type": "string" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "version": { "type": "number" },
+        "status": { "type": "string", "enum": ["draft", "submitted", "under_review", "approved", "revision_requested", "rejected"] },
+        "reviewNotes": { "type": "string", "maxLength": 2000 },
+        "reviewedBy": { "type": "string" },
+        "reviewedByName": { "type": "string" },
+        "reviewedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "projectId", "clientId", "title", "submittedBy", "version", "status"]
+    },
+    "DeliverableVersion": {
+      "title": "Deliverable Version History",
+      "description": "Immutable historical versions of deliverable submissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deliverableId": { "type": "string" },
+        "versionNumber": { "type": "number" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "externalUrl": { "type": "string" },
+        "submittedBy": { "type": "string" },
+        "submittedByName": { "type": "string" },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string" },
+        "reviewNotes": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "reviewedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["deliverableId", "versionNumber", "title", "submittedBy", "submittedAt", "status"]
+    },
+    "ProjectComment": {
+      "title": "Project Communication Comment",
+      "description": "Internal team thread or client-visible conversation comment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorRole": { "type": "string", "enum": ["admin", "team", "client"] },
+        "content": { "type": "string", "maxLength": 2000 },
+        "clientVisible": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "clientId", "authorUid", "authorName", "content", "clientVisible", "createdAt"]
+    },
+    "SupportTicket": {
+      "title": "Client Support Request",
+      "description": "Client support issue, tracking anomaly report, or ad revision request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "subject": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "status": { "type": "string", "enum": ["open", "in_progress", "resolved", "closed"] },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "assignedToUid": { "type": "string" },
+        "assignedToName": { "type": "string" },
+        "resolutionNotes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "resolvedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientId", "subject", "description", "priority", "status", "createdByUid", "createdAt"]
+    },
+    "AppNotification": {
+      "title": "System Notification",
+      "description": "Targeted real-time notification for task assignment, approvals, comments, and tickets",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 500 },
+        "relatedEntityType": { "type": "string", "enum": ["task", "deliverable", "project", "support_ticket"] },
+        "relatedEntityId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientUid", "type", "title", "message", "relatedEntityType", "relatedEntityId", "read", "createdAt"]
+    },
+    "TrackingAsset": {
+      "title": "Tracking Asset",
+      "description": "Meta Pixel, Meta CAPI, GA4, and GTM container credentials",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "type": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "identifier": { "type": "string", "maxLength": 120 },
+        "serverContainerUrl": { "type": "string", "maxLength": 255 },
+        "accessLevel": { "type": "string", "enum": ["admin_only", "shared_with_client"] },
+        "status": { "type": "string", "enum": ["active", "in_configuration", "verifying", "archived"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientId", "type", "name", "identifier", "accessLevel", "status"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Client invoice for agency retainers and projects",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string", "maxLength": 50 },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "issued", "paid", "overdue", "voided"] },
+        "issueDate": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "tax": { "type": "number" },
+        "discount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "BDT"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceNumber", "clientId", "status", "issueDate", "dueDate", "totalAmount", "currency"]
+    },
+    "Expense": {
+      "title": "Agency Expense",
+      "description": "Internal operating costs strictly hidden from clients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string", "maxLength": 255 },
+        "vendor": { "type": "string", "maxLength": 100 },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "BDT"] },
+        "date": { "type": "string" },
+        "recordedByUserId": { "type": "string" }
+      },
+      "required": ["category", "description", "vendor", "amount", "currency", "date", "recordedByUserId"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "Immutable security and change log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "actorUserId": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "action": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "details": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["success", "failure"] }
+      },
+      "required": ["timestamp", "actorUserId", "actorRole", "action", "entityType", "entityId", "status"]
+    },
+    "ClientInternalNotes": {
+      "title": "Client Internal Notes",
+      "description": "Confidential internal agency notes isolated from client-facing documents",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string" },
+        "notes": { "type": "string", "maxLength": 5000 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["clientId", "notes"]
+    },
+    "ClientInvitation": {
+      "title": "Client Portal Invitation",
+      "description": "Secure one-time onboarding invitation for client representatives",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "contactEmail": { "type": "string", "format": "email" },
+        "contactName": { "type": "string" },
+        "role": { "type": "string", "enum": ["client"] },
+        "status": { "type": "string", "enum": ["pending", "claimed", "revoked", "expired"] },
+        "invitedBy": { "type": "string" },
+        "claimedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "expiresAtMillis": { "type": "number" },
+        "claimedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clientId", "clientName", "contactEmail", "contactName", "role", "status", "invitedBy", "createdAt", "expiresAt", "expiresAtMillis"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Agency user profiles and client portal user records"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Client business organizations"
+    },
+    "/client_internal_notes/{clientId}": {
+      "schema": "ClientInternalNotes",
+      "description": "Strictly confidential agency internal notes (Admin & assigned team specialists only)"
+    },
+    "/client_invitations/{invitationId}": {
+      "schema": "ClientInvitation",
+      "description": "Client portal access invitations with expiry and anti-replay verification"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Marketing campaigns and tracking implementations"
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Actionable tasks and client approval milestones"
+    },
+    "/assets/{assetId}": {
+      "schema": "TrackingAsset",
+      "description": "Tracking infrastructure credentials, Pixels, and GTM containers"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": "Invoice",
+      "description": "Client billing invoices"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Internal agency operational expenses (Admin only)"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Immutable audit trail records"
+    },
+    "/deliverables/{deliverableId}": {
+      "schema": "Deliverable",
+      "description": "Milestone deliverables submitted for client approval or internal QA"
+    },
+    "/deliverable_versions/{versionId}": {
+      "schema": "DeliverableVersion",
+      "description": "Historical deliverable version submissions"
+    },
+    "/project_comments/{commentId}": {
+      "schema": "ProjectComment",
+      "description": "Project communication threads with team-only or client-visible classification"
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Client support requests, tracking issues, and revision tickets"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "AppNotification",
+      "description": "Role-specific and recipient-targeted system notifications"
+    }
+  }
+}

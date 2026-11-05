@@ -1,0 +1,490 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny all unmapped paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Hardened Global Security Primitives
+    // -------------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Bootstrapped Admin Verification (matching user email from environment)
+    function isBootstrapAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'hmmojjammalhoq@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    // Role-based privilege checks
+    function isAdmin() {
+      return isSignedIn() && (
+        isBootstrapAdmin() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isTeam() {
+      return isSignedIn() && (
+        isAdmin() ||
+        exists(/databases/$(database)/documents/team_members/$(request.auth.uid))
+      );
+    }
+
+    function getCallerProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isClientUser() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getCallerProfile().role == 'client';
+    }
+
+    function isClientOwner(clientId) {
+      return isClientUser() && getCallerProfile().clientId == clientId;
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation Blueprints
+    // -------------------------------------------------------------------------
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'displayName', 'role', 'status']) &&
+        data.id is string && data.id == request.auth.uid &&
+        data.email is string && data.email.size() <= 120 &&
+        data.displayName is string && data.displayName.size() <= 100 &&
+        data.role in ['admin', 'team', 'client'] &&
+        data.status in ['active', 'suspended', 'invited'];
+    }
+
+    function isValidClient(data) {
+      return data.businessName is string && data.businessName.size() <= 120 &&
+        data.status in ['lead', 'onboarding', 'active', 'paused', 'churned', 'archived'] &&
+        data.monthlyRetainer is number && data.monthlyRetainer >= 0 &&
+        data.currency in ['USD', 'BDT'];
+    }
+
+    function isValidProject(data) {
+      return data.clientId is string && isValidId(data.clientId) &&
+        data.name is string && data.name.size() <= 120 &&
+        data.status in ['planning', 'active', 'in_progress', 'in_review', 'completed', 'on_hold', 'archived'] &&
+        data.clientVisible is bool;
+    }
+
+    function isValidTask(data) {
+      return data.projectId is string && isValidId(data.projectId) &&
+        data.clientId is string && isValidId(data.clientId) &&
+        data.title is string && data.title.size() <= 150 &&
+        data.status in ['todo', 'in_progress', 'in_review', 'completed', 'cancelled'] &&
+        data.priority in ['low', 'medium', 'high', 'urgent'] &&
+        data.progressPercentage is number && data.progressPercentage >= 0 && data.progressPercentage <= 100 &&
+        data.clientVisible is bool &&
+        data.isArchived is bool;
+    }
+
+    function isValidDeliverable(data) {
+      return data.taskId is string && isValidId(data.taskId) &&
+        data.projectId is string && isValidId(data.projectId) &&
+        data.clientId is string && isValidId(data.clientId) &&
+        data.title is string && data.title.size() <= 150 &&
+        data.version is number && data.version >= 1 &&
+        data.status in ['draft', 'submitted', 'under_review', 'approved', 'revision_requested', 'rejected'];
+    }
+
+    function isValidDeliverableVersion(data) {
+      return data.deliverableId is string && isValidId(data.deliverableId) &&
+        data.versionNumber is number && data.versionNumber >= 1 &&
+        data.title is string && data.title.size() <= 150;
+    }
+
+    function isValidProjectComment(data) {
+      return data.projectId is string && isValidId(data.projectId) &&
+        data.clientId is string && isValidId(data.clientId) &&
+        data.authorUid is string && data.authorUid == request.auth.uid &&
+        data.authorName is string && data.authorName.size() <= 100 &&
+        data.content is string && data.content.size() > 0 && data.content.size() <= 2000 &&
+        data.clientVisible is bool;
+    }
+
+    function isValidSupportTicket(data) {
+      return data.clientId is string && isValidId(data.clientId) &&
+        data.subject is string && data.subject.size() <= 150 &&
+        data.description is string && data.description.size() <= 3000 &&
+        data.priority in ['low', 'medium', 'high', 'urgent'] &&
+        data.status in ['open', 'in_progress', 'resolved', 'closed'];
+    }
+
+    function isValidNotification(data) {
+      return data.recipientUid is string && isValidId(data.recipientUid) &&
+        data.title is string && data.title.size() <= 150 &&
+        data.message is string && data.message.size() <= 500 &&
+        data.relatedEntityType in ['task', 'deliverable', 'project', 'support_ticket'] &&
+        data.read is bool;
+    }
+
+    function isValidAsset(data) {
+      return data.clientId is string && isValidId(data.clientId) &&
+        data.name is string && data.name.size() <= 100 &&
+        data.identifier is string && data.identifier.size() <= 120 &&
+        data.accessLevel in ['admin_only', 'shared_with_client'] &&
+        data.status in ['active', 'in_configuration', 'verifying', 'archived'];
+    }
+
+    function isValidInvoice(data) {
+      return data.clientId is string && isValidId(data.clientId) &&
+        data.invoiceNumber is string && data.invoiceNumber.size() <= 50 &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        data.status in ['draft', 'issued', 'paid', 'overdue', 'voided'] &&
+        data.currency in ['USD', 'BDT'];
+    }
+
+    function isValidExpense(data) {
+      return data.category is string && data.category.size() <= 50 &&
+        data.amount is number && data.amount > 0 &&
+        data.currency in ['USD', 'BDT'] &&
+        data.recordedByUserId is string && data.recordedByUserId == request.auth.uid;
+    }
+
+    function isValidAuditLog(data) {
+      return data.actorUserId is string && data.actorUserId == request.auth.uid &&
+        data.actorEmail is string && data.actorEmail == request.auth.token.email &&
+        data.actorRole is string && (
+          (isAdmin() && data.actorRole == 'admin') ||
+          (isTeam() && data.actorRole == 'team')
+        ) &&
+        data.action is string && data.action.size() <= 60 &&
+        data.entityType is string && data.entityType.size() <= 50 &&
+        data.entityId is string && isValidId(data.entityId);
+    }
+
+    function isValidInvitation(data) {
+      return data.clientId is string && isValidId(data.clientId) &&
+        data.clientName is string && data.clientName.size() <= 120 &&
+        data.contactEmail is string && data.contactEmail.size() <= 120 &&
+        data.contactName is string && data.contactName.size() <= 100 &&
+        data.role == 'client' &&
+        data.status in ['pending', 'claimed', 'revoked', 'expired'] &&
+        data.expiresAtMillis is number;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Blocks
+    // -------------------------------------------------------------------------
+
+    // Admin directory (stores trusted admin UIDs)
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && isValidId(adminId);
+      allow write: if isBootstrapAdmin() && isValidId(adminId);
+    }
+
+    // Team members directory
+    match /team_members/{memberId} {
+      allow read: if isSignedIn() && isValidId(memberId);
+      allow write: if isAdmin() && isValidId(memberId);
+    }
+
+    // Users
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isSignedIn() && request.auth.uid == userId &&
+        (incoming().role != 'admin' || isBootstrapAdmin()) &&
+        isValidUser(incoming());
+      allow update: if isValidId(userId) && isSignedIn() && isValidUser(incoming()) && (
+        isAdmin() ||
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'title', 'skills', 'updatedAt']))
+      );
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // Clients
+    match /clients/{clientId} {
+      allow get: if isValidId(clientId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in resource.data.assignedSpecialists) ||
+        isClientOwner(clientId)
+      );
+      allow list: if isAdmin() || (
+        isTeam() && request.auth.uid in resource.data.assignedSpecialists
+      );
+      allow create: if isAdmin() && isValidId(clientId) && isValidClient(incoming());
+      allow update: if isValidId(clientId) && isValidClient(incoming()) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in resource.data.assignedSpecialists &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedSpecialists', 'updatedAt']))
+      );
+      allow delete: if isAdmin() && isValidId(clientId);
+    }
+
+    // Client Internal Notes (Agency-Only: strictly Admin & assigned team specialists)
+    match /client_internal_notes/{clientId} {
+      allow get: if isValidId(clientId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/clients/$(clientId)).data.assignedSpecialists)
+      );
+      allow list: if isAdmin();
+      allow write: if isValidId(clientId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/clients/$(clientId)).data.assignedSpecialists)
+      );
+    }
+
+    // Client Invitations (Secure Onboarding Flow)
+    match /client_invitations/{invitationId} {
+      allow read: if isValidId(invitationId) && (
+        isAdmin() || isTeam() ||
+        (isSignedIn() && request.auth.token.email_verified == true &&
+          resource.data.contactEmail == request.auth.token.email)
+      );
+      allow create, delete: if isAdmin() && isValidId(invitationId) && isValidInvitation(incoming());
+      allow update: if isValidId(invitationId) && (
+        isAdmin() ||
+        (isSignedIn() &&
+          request.auth.token.email_verified == true &&
+          resource.data.contactEmail == request.auth.token.email &&
+          resource.data.status == 'pending' &&
+          resource.data.expiresAtMillis > request.time.toMillis() &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'claimedByUid', 'claimedAt']) &&
+          incoming().status == 'claimed' &&
+          incoming().claimedByUid == request.auth.uid)
+      );
+    }
+
+    // Projects
+    match /projects/{projectId} {
+      allow get: if isValidId(projectId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in resource.data.assignedTeamMembers) ||
+        (isClientOwner(existing().clientId) && existing().clientVisible == true)
+      );
+      allow list: if isAdmin() || (
+        isTeam() && request.auth.uid in resource.data.assignedTeamMembers
+      ) || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId &&
+        resource.data.clientVisible == true
+      );
+      allow create: if isValidId(projectId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in incoming().assignedTeamMembers)
+      ) && isValidProject(incoming());
+      allow update: if isValidId(projectId) && isValidProject(incoming()) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in resource.data.assignedTeamMembers &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'progressPercentage', 'targetEndDate', 'updatedAt']))
+      );
+      allow delete: if isAdmin() && isValidId(projectId);
+    }
+
+    // Tasks (Granular action items with RBAC assignment & client visibility)
+    match /tasks/{taskId} {
+      allow get: if isValidId(taskId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in resource.data.assignedTeamMembers) ||
+        (isClientOwner(resource.data.clientId) && resource.data.clientVisible == true)
+      );
+      allow list: if isAdmin() || (
+        isTeam() && request.auth.uid in resource.data.assignedTeamMembers
+      ) || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId &&
+        resource.data.clientVisible == true
+      );
+      allow create: if isValidId(taskId) && isValidTask(incoming()) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(incoming().projectId)).data.assignedTeamMembers)
+      );
+      allow update: if isValidId(taskId) && isValidTask(incoming()) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in resource.data.assignedTeamMembers &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'progressPercentage', 'completedAt', 'updatedAt']))
+      );
+      allow delete: if isAdmin() && isValidId(taskId);
+    }
+
+    // Deliverables (Milestones, reports, links with client review & approval flow)
+    match /deliverables/{deliverableId} {
+      allow get: if isValidId(deliverableId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.assignedTeamMembers) ||
+        (isClientOwner(resource.data.clientId) && resource.data.status != 'draft')
+      );
+      allow list: if isAdmin() || (
+        isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.assignedTeamMembers
+      ) || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId &&
+        resource.data.status != 'draft'
+      );
+      allow create: if isValidId(deliverableId) && isValidDeliverable(incoming()) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(incoming().projectId)).data.assignedTeamMembers)
+      );
+      allow update: if isValidId(deliverableId) && isValidDeliverable(incoming()) && (
+        isAdmin() ||
+        // Team member submission/revision updates
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(existing().projectId)).data.assignedTeamMembers &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'externalUrl', 'status', 'version', 'submittedBy', 'submittedByName', 'submittedAt', 'updatedAt'])) ||
+        // Client review approval workflow
+        (isClientOwner(existing().clientId) && existing().status in ['submitted', 'under_review'] &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewNotes', 'reviewedBy', 'reviewedByName', 'reviewedAt', 'updatedAt']) &&
+          incoming().status in ['approved', 'revision_requested', 'rejected'] &&
+          incoming().reviewedBy == request.auth.uid)
+      );
+      allow delete: if isAdmin() && isValidId(deliverableId);
+    }
+
+    // Deliverable Version History
+    match /deliverable_versions/{versionId} {
+      allow get: if isValidId(versionId) && (
+        isAdmin() || isTeam() ||
+        (isClientUser() && get(/databases/$(database)/documents/deliverables/$(resource.data.deliverableId)).data.clientId == getCallerProfile().clientId)
+      );
+      allow list: if isAdmin() || isTeam() || isClientUser();
+      allow create: if isValidId(versionId) && isValidDeliverableVersion(incoming()) && (
+        isAdmin() || isTeam() ||
+        (isClientUser() && incoming().status in ['approved', 'revision_requested', 'rejected'])
+      );
+      allow update, delete: if isAdmin() && isValidId(versionId);
+    }
+
+    // Project Comments & Communication
+    match /project_comments/{commentId} {
+      allow get: if isValidId(commentId) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.assignedTeamMembers) ||
+        (isClientOwner(resource.data.clientId) && resource.data.clientVisible == true)
+      );
+      allow list: if isAdmin() || (
+        isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.assignedTeamMembers
+      ) || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId &&
+        resource.data.clientVisible == true
+      );
+      allow create: if isValidId(commentId) && isValidProjectComment(incoming()) && (
+        isAdmin() ||
+        (isTeam() && request.auth.uid in get(/databases/$(database)/documents/projects/$(incoming().projectId)).data.assignedTeamMembers) ||
+        (isClientOwner(incoming().clientId) && incoming().clientVisible == true)
+      );
+      allow update, delete: if isValidId(commentId) && (
+        isAdmin() || (isSignedIn() && request.auth.uid == resource.data.authorUid)
+      );
+    }
+
+    // Support Requests
+    match /support_tickets/{ticketId} {
+      allow get: if isValidId(ticketId) && (
+        isAdmin() || isTeam() || isClientOwner(resource.data.clientId)
+      );
+      allow list: if isAdmin() || isTeam() || (
+        isClientUser() && resource.data.clientId == getCallerProfile().clientId
+      );
+      allow create: if isValidId(ticketId) && isValidSupportTicket(incoming()) && (
+        isAdmin() ||
+        (isClientOwner(incoming().clientId) && incoming().createdByUid == request.auth.uid)
+      );
+      allow update: if isValidId(ticketId) && isValidSupportTicket(incoming()) && (
+        isAdmin() || isTeam() ||
+        (isClientOwner(existing().clientId) && existing().status == 'open' &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['subject', 'description', 'priority', 'updatedAt']))
+      );
+      allow delete: if isAdmin() && isValidId(ticketId);
+    }
+
+    // Notifications (Targeted, recipient-isolated)
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isSignedIn() && resource.data.recipientUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.recipientUid == request.auth.uid;
+      allow create: if isValidId(notificationId) && isSignedIn() && isValidNotification(incoming());
+      allow update: if isValidId(notificationId) && isSignedIn() && resource.data.recipientUid == request.auth.uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isValidId(notificationId) && isSignedIn() && (isAdmin() || resource.data.recipientUid == request.auth.uid);
+    }
+
+    // Tracking Assets (Meta Pixel, CAPI, GTM, GA4)
+    match /assets/{assetId} {
+      allow get: if isValidId(assetId) && (
+        isAdmin() || isTeam() ||
+        (isClientOwner(existing().clientId) && existing().accessLevel == 'shared_with_client')
+      );
+      allow list: if isAdmin() || isTeam() || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId &&
+        resource.data.accessLevel == 'shared_with_client'
+      );
+      allow write: if isValidId(assetId) && (isAdmin() || isTeam()) && isValidAsset(incoming());
+    }
+
+    // Invoices & Billing
+    match /invoices/{invoiceId} {
+      allow get: if isValidId(invoiceId) && (
+        isAdmin() ||
+        (isClientOwner(existing().clientId) && existing().status != 'draft')
+      );
+      allow list: if isAdmin() || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId &&
+        resource.data.status != 'draft'
+      );
+      allow create: if isAdmin() && isValidId(invoiceId) && isValidInvoice(incoming());
+      allow update: if isAdmin() && isValidId(invoiceId) && isValidInvoice(incoming()) && (
+        !(existing().status in ['paid', 'voided']) ||
+        incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+      );
+      allow delete: if isAdmin() && isValidId(invoiceId);
+    }
+
+    // Expenses (Agency internal operating costs - strictly admin)
+    match /expenses/{expenseId} {
+      allow read, write: if isAdmin() && isValidId(expenseId) && (request.resource == null || isValidExpense(incoming()));
+    }
+
+    // SOPs & Knowledge Base
+    match /sops/{sopId} {
+      allow read: if (isAdmin() || isTeam()) && isValidId(sopId);
+      allow write: if (isAdmin() || isTeam()) && isValidId(sopId);
+    }
+
+    // Campaign Calendar
+    match /campaign_calendar/{entryId} {
+      allow read, write: if (isAdmin() || isTeam()) && isValidId(entryId);
+    }
+
+    // Audit Logs (Immutable, append-only)
+    match /audit_logs/{logId} {
+      allow read: if isAdmin() && isValidId(logId);
+      allow create: if isValidId(logId) && (isAdmin() || isTeam()) && isValidAuditLog(incoming());
+      allow update, delete: if false;
+    }
+
+    // Connection testing doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Bounce Growth | Agency Management System",
+  "description": "Production-oriented agency management system and client portal for Bounce Growth, a tracking-first digital marketing agency.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

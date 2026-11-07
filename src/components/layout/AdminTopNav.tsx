@@ -56,10 +56,10 @@ export function AdminTopNav({ onOpenMobileMenu }: AdminTopNavProps) {
           )}
         </div>
 
-        {/* Development-only Role Switcher (Disabled in Production and when live authenticated) */}
-        {import.meta.env.DEV && !isLiveAuth && (
+        {/* Role Switcher (Enabled when not live authenticated) */}
+        {!isLiveAuth && (
           <div className="hidden sm:flex items-center p-0.5 bg-slate-100 border border-slate-200 rounded-lg text-[11px]">
-            <span className="px-1.5 text-[10px] text-slate-400 font-mono">DEV:</span>
+            <span className="px-1.5 text-[10px] text-slate-400 font-mono">ROLE:</span>
             <button
               onClick={() => switchDevRole('admin')}
               className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
@@ -91,7 +91,7 @@ export function AdminTopNav({ onOpenMobileMenu }: AdminTopNavProps) {
           variant="outline"
           size="sm"
           onClick={() => {
-            if (import.meta.env.DEV && !isLiveAuth) {
+            if (!isLiveAuth) {
               switchDevRole('client');
             }
             navigate('/portal');

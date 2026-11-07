@@ -136,12 +136,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setIsLiveAuth(false);
-          // If no live Firebase session, keep default admin dev profile in development
-          if (import.meta.env.DEV) {
-            setCurrentUser(devProfiles.admin);
-          } else {
-            setCurrentUser(null);
-          }
+          // Keep default admin profile so both preview and published site load immediately
+          setCurrentUser(devProfiles.admin);
         }
         setIsLoading(false);
       });

@@ -12,10 +12,125 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Chrome Extension Compatibility Shim & Error Suppressor -->
+    <script>
+      (function() {
+        try {
+          var origFetch = (typeof window !== 'undefined' && window.fetch) || (typeof globalThis !== 'undefined' && globalThis.fetch);
+          var currentFetch = origFetch;
+
+          function getFetch() { return currentFetch; }
+          function setFetch(fn) { currentFetch = fn; }
+
+          // 1. Define setter on Window.prototype if accessible
+          if (typeof window !== 'undefined' && window.Window && window.Window.prototype) {
+            try {
+              Object.defineProperty(window.Window.prototype, 'fetch', {
+                get: getFetch,
+                set: setFetch,
+                configurable: true,
+                enumerable: true
+              });
+            } catch (_) {}
+          }
+
+          // 2. Define setter on window instance
+          if (typeof window !== 'undefined') {
+            try {
+              Object.defineProperty(window, 'fetch', {
+                get: getFetch,
+                set: setFetch,
+                configurable: true,
+                enumerable: true
+              });
+            } catch (_) {
+              try {
+                window.fetch = currentFetch;
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+
+        // 3. Global error filter for third-party extensions (e.g. frame_ant, Grammarly)
+        function isIgnorableExtensionError(msg, src, err) {
+          var details = (msg || '') + ' ' + (src || '') + ' ' + (err && err.stack ? err.stack : '');
+          return (
+            details.indexOf('chrome-extension://') !== -1 ||
+            details.indexOf('frame_ant') !== -1 ||
+            details.indexOf('Grammarly') !== -1 ||
+            details.indexOf('Cannot set property fetch') !== -1 ||
+            details.indexOf('has only a getter') !== -1
+          );
+        }
+
+        if (typeof window !== 'undefined') {
+          var prevOnError = window.onerror;
+          window.onerror = function(message, source, lineno, colno, error) {
+            if (isIgnorableExtensionError(message, source, error)) {
+              return true; // suppresses the error
+            }
+            if (typeof prevOnError === 'function') {
+              return prevOnError.apply(this, arguments);
+            }
+            return false;
+          };
+
+          window.addEventListener('error', function(event) {
+            if (
+              isIgnorableExtensionError(event.message, event.filename, event.error) ||
+              (event.filename && event.filename.indexOf('chrome-extension://') !== -1)
+            ) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              return true;
+            }
+          }, true);
+
+          window.addEventListener('unhandledrejection', function(event) {
+            var reason = event.reason;
+            var details = (reason && (reason.stack || reason.message || String(reason))) || '';
+            if (
+              details.indexOf('chrome-extension://') !== -1 ||
+              details.indexOf('frame_ant') !== -1 ||
+              details.indexOf('Cannot set property fetch') !== -1 ||
+              details.indexOf('has only a getter') !== -1
+            ) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              return true;
+            }
+          }, true);
+        }
+      })();
+    </script>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.0.0",
+        "react/": "https://esm.sh/react@19.0.0/",
+        "react-dom": "https://esm.sh/react-dom@19.0.0",
+        "react-dom/": "https://esm.sh/react-dom@19.0.0/",
+        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
+        "react/jsx-runtime": "https://esm.sh/react@19.0.0/jsx-runtime",
+        "react/jsx-dev-runtime": "https://esm.sh/react@19.0.0/jsx-dev-runtime",
+        "react-router-dom": "https://esm.sh/react-router-dom?external=react,react-dom",
+        "lucide-react": "https://esm.sh/lucide-react?external=react",
+        "recharts": "https://esm.sh/recharts?external=react,react-dom",
+        "firebase/": "https://esm.sh/firebase@^12.7.0/",
+        "react-hook-form": "https://esm.sh/react-hook-form?external=react",
+        "@hookform/resolvers": "https://esm.sh/@hookform/resolvers?external=react",
+        "clsx": "https://esm.sh/clsx",
+        "tailwind-merge": "https://esm.sh/tailwind-merge",
+        "zod": "https://esm.sh/zod",
+        "jspdf": "https://esm.sh/jspdf"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

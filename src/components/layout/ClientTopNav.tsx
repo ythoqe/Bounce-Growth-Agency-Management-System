@@ -50,7 +50,7 @@ export function ClientTopNav({ onOpenMobileMenu }: ClientTopNavProps) {
 
         <NotificationDropdown />
 
-        {import.meta.env.DEV && (
+        {!isLiveAuth && (
           <Button
             variant="outline"
             size="sm"

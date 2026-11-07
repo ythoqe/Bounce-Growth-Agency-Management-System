@@ -1,15 +1,182 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
+import { Badge } from '../../components/common/Badge';
 import { EmptyState } from '../../components/common/EmptyState';
 import { Tabs } from '../../components/common/Tabs';
-import { DollarSign, Plus, Lock, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Table, Column } from '../../components/common/Table';
+import { Modal } from '../../components/common/Modal';
+import { Input } from '../../components/common/Input';
+import {
+  DollarSign,
+  Plus,
+  Lock,
+  ArrowDownRight,
+  ArrowUpRight,
+  CreditCard,
+  Receipt,
+  Trash2,
+  Calendar,
+  AlertCircle,
+  FileText,
+  Building,
+} from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import {
+  Invoice,
+  Payment,
+  Expense,
+  Transaction,
+  PaymentMethod,
+} from '../../types/finance';
+import {
+  createInvoice,
+  recordPayment,
+  createExpense,
+  subscribeInvoices,
+  subscribePayments,
+  subscribeExpenses,
+  subscribeTransactions,
+} from '../../services/financeService';
+import { subscribeClients } from '../../services/clients/clientService';
+import { ClientProfile } from '../../types/client';
 
 export function FinancePage() {
-  const { currentRole } = useAuth();
+  const { currentUser, currentRole } = useAuth();
   const [activeTab, setActiveTab] = useState('invoices');
+
+  // Firestore Live State
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [clients, setClients] = useState<ClientProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Modals
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
+
+  // Create Invoice Form State
+  const [selectedClientId, setSelectedClientId] = useState('');
+  const [invoiceCurrency, setInvoiceCurrency] = useState<'USD' | 'BDT'>('USD');
+  const [invoiceDueDate, setInvoiceDueDate] = useState('');
+  const [invoiceTaxRate, setInvoiceTaxRate] = useState<number>(0);
+  const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0);
+  const [invoiceNotes, setInvoiceNotes] = useState('');
+  const [lineItems, setLineItems] = useState<
+    Array<{ description: string; quantity: number; unitPrice: number }>
+  >([{ description: 'Performance Marketing & Retainer', quantity: 1, unitPrice: 1500 }]);
+  const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
+  const [invoiceFormError, setInvoiceFormError] = useState('');
+
+  // Record Payment Form State
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_transfer');
+  const [paymentDate, setPaymentDate] = useState('');
+  const [paymentRefNumber, setPaymentRefNumber] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+
+  // Record Expense Form State
+  const [expenseCategory, setExpenseCategory] = useState('Server & Tracking Infrastructure');
+  const [expenseVendor, setExpenseVendor] = useState('');
+  const [expenseDescription, setExpenseDescription] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState<number>(0);
+  const [expenseCurrency, setExpenseCurrency] = useState<'USD' | 'BDT'>('USD');
+  const [expenseDate, setExpenseDate] = useState('');
+  const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [expenseError, setExpenseError] = useState('');
+
+  // Subscribe to real-time data
+  useEffect(() => {
+    if (currentRole !== 'admin' || !currentUser) {
+      setLoading(false);
+      return;
+    }
+
+    const unsubClients = subscribeClients(
+      (data) => setClients(data),
+      (err) => console.error(err)
+    );
+
+    const unsubInvoices = subscribeInvoices(
+      undefined,
+      (data) => {
+        setInvoices(data);
+        setLoading(false);
+      },
+      currentUser
+    );
+
+    const unsubPayments = subscribePayments(
+      undefined,
+      (data) => setPayments(data),
+      currentUser
+    );
+
+    const unsubExpenses = subscribeExpenses(
+      (data) => setExpenses(data),
+      currentUser
+    );
+
+    const unsubTransactions = subscribeTransactions(
+      (data) => setTransactions(data),
+      currentUser
+    );
+
+    return () => {
+      unsubClients();
+      unsubInvoices();
+      unsubPayments();
+      unsubExpenses();
+      unsubTransactions();
+    };
+  }, [currentRole, currentUser]);
+
+  // Invoice calculations
+  const invoiceCalculations = useMemo(() => {
+    const subtotal = lineItems.reduce((acc, item) => {
+      const qty = Math.max(1, item.quantity || 1);
+      const price = Math.max(0, item.unitPrice || 0);
+      return acc + qty * price;
+    }, 0);
+    const tax = invoiceTaxRate > 0 ? (subtotal * invoiceTaxRate) / 100 : 0;
+    const discount = Math.max(0, invoiceDiscount || 0);
+    const total = Math.max(0, subtotal + tax - discount);
+    return {
+      subtotal: Math.round(subtotal * 100) / 100,
+      tax: Math.round(tax * 100) / 100,
+      discount: Math.round(discount * 100) / 100,
+      total: Math.round(total * 100) / 100,
+    };
+  }, [lineItems, invoiceTaxRate, invoiceDiscount]);
+
+  // Aggregate Stats
+  const stats = useMemo(() => {
+    const outstandingTotal = invoices
+      .filter((inv) => inv.status !== 'voided' && inv.status !== 'paid')
+      .reduce((sum, inv) => sum + (inv.balanceDue || 0), 0);
+
+    const collectedTotal = payments.reduce((sum, pay) => sum + (pay.amount || 0), 0);
+
+    const expensesTotal = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+    const unpaidCount = invoices.filter(
+      (inv) => inv.status === 'issued' || inv.status === 'partially_paid' || inv.status === 'overdue'
+    ).length;
+
+    return {
+      outstandingTotal: Math.round(outstandingTotal * 100) / 100,
+      collectedTotal: Math.round(collectedTotal * 100) / 100,
+      expensesTotal: Math.round(expensesTotal * 100) / 100,
+      unpaidCount,
+    };
+  }, [invoices, payments, expenses]);
 
   if (currentRole !== 'admin') {
     return (
@@ -23,23 +190,411 @@ export function FinancePage() {
     );
   }
 
+  // Handle invoice submission
+  const handleCreateInvoiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInvoiceFormError('');
+
+    if (!selectedClientId) {
+      setInvoiceFormError('Please select a client organization.');
+      return;
+    }
+
+    const selectedClient = clients.find((c) => c.id === selectedClientId);
+    if (!selectedClient) {
+      setInvoiceFormError('Selected client not found.');
+      return;
+    }
+
+    if (!invoiceDueDate) {
+      setInvoiceFormError('Due date is required.');
+      return;
+    }
+
+    if (lineItems.length === 0 || lineItems.some((i) => !i.description.trim())) {
+      setInvoiceFormError('All line items must have a clear description.');
+      return;
+    }
+
+    if (!currentUser) return;
+
+    setInvoiceSubmitting(true);
+    try {
+      await createInvoice(
+        {
+          clientId: selectedClient.id,
+          clientName: selectedClient.businessName,
+          dueDate: invoiceDueDate,
+          currency: invoiceCurrency,
+          items: lineItems,
+          taxRate: invoiceTaxRate,
+          discount: invoiceDiscount,
+          notes: invoiceNotes,
+          status: 'issued',
+        },
+        {
+          uid: currentUser.id,
+          email: currentUser.email,
+          role: 'admin',
+          name: currentUser.displayName,
+        }
+      );
+
+      setIsInvoiceModalOpen(false);
+      // Reset form
+      setSelectedClientId('');
+      setInvoiceDueDate('');
+      setInvoiceTaxRate(0);
+      setInvoiceDiscount(0);
+      setInvoiceNotes('');
+      setLineItems([{ description: 'Performance Marketing & Retainer', quantity: 1, unitPrice: 1500 }]);
+    } catch (err: any) {
+      setInvoiceFormError(err.message || 'Failed to create invoice.');
+    } finally {
+      setInvoiceSubmitting(false);
+    }
+  };
+
+  // Open Payment modal
+  const handleOpenPaymentModal = (invoice: Invoice) => {
+    setSelectedInvoiceForPayment(invoice);
+    setPaymentAmount(invoice.balanceDue);
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentMethod('bank_transfer');
+    setPaymentRefNumber('');
+    setPaymentNotes('');
+    setPaymentError('');
+    setIsPaymentModalOpen(true);
+  };
+
+  // Handle payment submission
+  const handleRecordPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPaymentError('');
+
+    if (!selectedInvoiceForPayment) return;
+
+    if (!paymentAmount || paymentAmount <= 0) {
+      setPaymentError('Payment amount must be greater than zero.');
+      return;
+    }
+
+    // Client-side guard against overpayment
+    if (paymentAmount > selectedInvoiceForPayment.balanceDue) {
+      setPaymentError(
+        `Overpayment rejected: Entered amount ($${paymentAmount}) exceeds the remaining balance due ($${selectedInvoiceForPayment.balanceDue}).`
+      );
+      return;
+    }
+
+    if (!currentUser) return;
+
+    setPaymentSubmitting(true);
+    try {
+      await recordPayment(
+        {
+          invoiceId: selectedInvoiceForPayment.id,
+          amount: paymentAmount,
+          paymentDate: paymentDate || undefined,
+          paymentMethod,
+          referenceNumber: paymentRefNumber,
+          notes: paymentNotes,
+        },
+        {
+          uid: currentUser.id,
+          email: currentUser.email,
+          role: 'admin',
+          name: currentUser.displayName,
+        }
+      );
+
+      setIsPaymentModalOpen(false);
+      setSelectedInvoiceForPayment(null);
+    } catch (err: any) {
+      setPaymentError(err.message || 'Failed to record payment.');
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  };
+
+  // Handle expense submission
+  const handleCreateExpenseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setExpenseError('');
+
+    if (!expenseVendor.trim() || !expenseDescription.trim()) {
+      setExpenseError('Vendor and description are required.');
+      return;
+    }
+
+    if (!expenseAmount || expenseAmount <= 0) {
+      setExpenseError('Expense amount must be greater than zero.');
+      return;
+    }
+
+    if (!currentUser) return;
+
+    setExpenseSubmitting(true);
+    try {
+      await createExpense(
+        {
+          category: expenseCategory,
+          vendor: expenseVendor,
+          description: expenseDescription,
+          amount: expenseAmount,
+          currency: expenseCurrency,
+          date: expenseDate || new Date().toISOString().split('T')[0],
+        },
+        {
+          uid: currentUser.id,
+          email: currentUser.email,
+          role: 'admin',
+        }
+      );
+
+      setIsExpenseModalOpen(false);
+      setExpenseVendor('');
+      setExpenseDescription('');
+      setExpenseAmount(0);
+      setExpenseDate('');
+    } catch (err: any) {
+      setExpenseError(err.message || 'Failed to record expense.');
+    } finally {
+      setExpenseSubmitting(false);
+    }
+  };
+
+  // Invoice Columns
+  const invoiceColumns: Column<Invoice>[] = [
+    {
+      header: 'Invoice #',
+      cell: (inv) => (
+        <div>
+          <div className="font-semibold text-slate-900 text-xs">{inv.invoiceNumber}</div>
+          <div className="text-[11px] text-slate-500">Issued: {inv.issueDate}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Client Organization',
+      cell: (inv) => (
+        <div>
+          <div className="font-medium text-slate-900 text-xs">{inv.clientName}</div>
+          <div className="text-[11px] text-slate-400">Due: {inv.dueDate}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Total Amount',
+      cell: (inv) => (
+        <span className="font-bold text-slate-900 text-xs">
+          {inv.currency} {inv.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      header: 'Paid / Balance',
+      cell: (inv) => (
+        <div>
+          <div className="text-xs text-emerald-700 font-medium">
+            Paid: {inv.currency} {(inv.paidAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </div>
+          <div className="text-[11px] font-semibold text-rose-600">
+            Due: {inv.currency} {(inv.balanceDue ?? inv.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Status',
+      cell: (inv) => {
+        const variants: Record<string, 'neutral' | 'blue' | 'green' | 'amber' | 'red'> = {
+          draft: 'neutral',
+          issued: 'blue',
+          partially_paid: 'amber',
+          paid: 'green',
+          overdue: 'red',
+          voided: 'neutral',
+        };
+        const labels: Record<string, string> = {
+          draft: 'Draft',
+          issued: 'Issued',
+          partially_paid: 'Partially Paid',
+          paid: 'Paid in Full',
+          overdue: 'Overdue',
+          voided: 'Voided',
+        };
+        return (
+          <Badge variant={variants[inv.status] || 'neutral'}>
+            {labels[inv.status] || inv.status}
+          </Badge>
+        );
+      },
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (inv) => (
+        <div className="flex items-center justify-end gap-1.5">
+          {inv.status !== 'paid' && inv.status !== 'voided' && (inv.balanceDue ?? inv.totalAmount) > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              icon={<CreditCard className="w-3.5 h-3.5 text-blue-600" />}
+              onClick={() => handleOpenPaymentModal(inv)}
+            >
+              Record Payment
+            </Button>
+          ) : (
+            <span className="text-[11px] text-emerald-700 font-semibold px-2 py-1 bg-emerald-50 rounded">
+              Settled
+            </span>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  // Payment Columns
+  const paymentColumns: Column<Payment>[] = [
+    {
+      header: 'Payment ID',
+      cell: (p) => <span className="font-mono text-xs text-slate-700">{p.id}</span>,
+    },
+    {
+      header: 'Client / Invoice',
+      cell: (p) => (
+        <div>
+          <div className="font-medium text-slate-900 text-xs">{p.clientName || 'Client'}</div>
+          <div className="text-[11px] text-slate-400 font-mono">Invoice: {p.invoiceId}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Amount Collected',
+      cell: (p) => (
+        <span className="font-bold text-emerald-700 text-xs">
+          ${p.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      header: 'Method & Reference',
+      cell: (p) => (
+        <div>
+          <span className="capitalize text-xs font-medium text-slate-800">
+            {p.paymentMethod.replace('_', ' ')}
+          </span>
+          {p.referenceNumber && (
+            <div className="text-[11px] text-slate-500 font-mono">Ref: {p.referenceNumber}</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: 'Date Recorded',
+      cell: (p) => <span className="text-xs text-slate-600">{p.paymentDate}</span>,
+    },
+  ];
+
+  // Expense Columns
+  const expenseColumns: Column<Expense>[] = [
+    {
+      header: 'Vendor / Provider',
+      cell: (exp) => (
+        <div>
+          <div className="font-semibold text-slate-900 text-xs">{exp.vendor}</div>
+          <div className="text-[11px] text-slate-500">{exp.description}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Category',
+      cell: (exp) => <Badge variant="neutral">{exp.category}</Badge>,
+    },
+    {
+      header: 'Amount',
+      cell: (exp) => (
+        <span className="font-bold text-rose-700 text-xs">
+          {exp.currency} {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      header: 'Date',
+      cell: (exp) => <span className="text-xs text-slate-600">{exp.date}</span>,
+    },
+  ];
+
+  // Transaction Ledger Columns
+  const transactionColumns: Column<Transaction>[] = [
+    {
+      header: 'Type',
+      cell: (txn) => (
+        <Badge variant={txn.type === 'income' ? 'green' : 'red'}>
+          {txn.type === 'income' ? '+ Revenue' : '- Expense'}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Description',
+      cell: (txn) => (
+        <div>
+          <div className="text-xs font-medium text-slate-900">{txn.description}</div>
+          <div className="text-[11px] text-slate-400 capitalize">{txn.category.replace('_', ' ')}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Amount',
+      cell: (txn) => (
+        <span
+          className={`font-bold text-xs ${
+            txn.type === 'income' ? 'text-emerald-700' : 'text-rose-700'
+          }`}
+        >
+          {txn.type === 'income' ? '+' : '-'}${txn.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      header: 'Date',
+      cell: (txn) => <span className="text-xs text-slate-600">{txn.date}</span>,
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Finance, Invoicing & Agency Expenses"
-        description="Issue client invoices in USD and BDT (bKash/Nagad/Bank Wire), track payment receipts, and record operational tool/server expenses. Strictly internal."
+        description="Issue client invoices with automated itemization & tax calculations, record partial/full payments with overpayment prevention, and track internal operational costs."
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => {}}>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<ArrowDownRight className="w-3.5 h-3.5" />}
+              onClick={() => {
+                setExpenseDate(new Date().toISOString().split('T')[0]);
+                setExpenseError('');
+                setIsExpenseModalOpen(true);
+              }}
+            >
               Record Expense
             </Button>
             <Button
               variant="primary"
               size="sm"
               icon={<Plus className="w-3.5 h-3.5" />}
-              onClick={() => {}}
+              onClick={() => {
+                setInvoiceDueDate(
+                  new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                );
+                setInvoiceFormError('');
+                setIsInvoiceModalOpen(true);
+              }}
             >
-              Issue Invoice
+              Create Invoice
             </Button>
           </div>
         }
@@ -53,58 +608,632 @@ export function FinancePage() {
             <ArrowUpRight className="w-4 h-4 text-amber-600" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">$0.00</div>
-            <p className="text-[11px] text-slate-400 mt-1">0 invoices awaiting payment</p>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
+              ${stats.outstandingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {stats.unpaidCount} invoice(s) awaiting payment
+            </p>
           </div>
         </Card>
 
         <Card>
           <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>Collected Revenue (MTD)</span>
+            <span>Collected Revenue (Total)</span>
             <DollarSign className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">$0.00</div>
-            <p className="text-[11px] text-slate-400 mt-1">Verified bank & bKash deposits</p>
+            <div className="text-2xl font-bold tracking-tight text-emerald-700 tabular-nums">
+              ${stats.collectedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {payments.length} verified payment receipt(s)
+            </p>
           </div>
         </Card>
 
         <Card>
           <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>Monthly Infrastructure Costs</span>
+            <span>Agency Operating Costs</span>
             <ArrowDownRight className="w-4 h-4 text-rose-600" />
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">$0.00</div>
-            <p className="text-[11px] text-slate-400 mt-1">Stape, Cloud Run, proxy tools</p>
+            <div className="text-2xl font-bold tracking-tight text-rose-700 tabular-nums">
+              ${stats.expensesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {expenses.length} recorded expense item(s)
+            </p>
           </div>
         </Card>
       </div>
 
       <Tabs
         tabs={[
-          { id: 'invoices', label: 'Client Invoices', count: 0 },
-          { id: 'unpaid', label: 'Overdue & Pending', count: 0 },
-          { id: 'expenses', label: 'Agency Expenses (Internal Only)', count: 0 },
-          { id: 'pnl', label: 'Profit & Loss Overview', count: 0 },
+          { id: 'invoices', label: 'Client Invoices', count: invoices.length },
+          { id: 'payments', label: 'Payment Receipts', count: payments.length },
+          { id: 'expenses', label: 'Agency Expenses', count: expenses.length },
+          { id: 'ledger', label: 'Transaction Ledger', count: transactions.length },
         ]}
         activeTab={activeTab}
         onChange={setActiveTab}
       />
 
-      <Card>
-        <CardHeader
-          title="Invoicing Ledger"
-          subtitle="Target Firestore collections: /invoices and /expenses (Admin-only RBAC rules)"
-        />
-        <EmptyState
-          icon={<DollarSign className="w-6 h-6 text-slate-400" />}
-          title="No invoices currently issued"
-          description="Create structured retainer invoices with automated itemized services and payment instructions."
-          actionLabel="Create Invoice"
-          onAction={() => {}}
-        />
-      </Card>
+      {/* Tab: Invoices */}
+      {activeTab === 'invoices' && (
+        <Card>
+          <CardHeader
+            title="Invoicing Ledger"
+            subtitle="Manage client invoices with itemized deliverables, automatic tax calculation, and partial payment recording."
+          />
+          {invoices.length === 0 ? (
+            <EmptyState
+              icon={<Receipt className="w-6 h-6 text-slate-400" />}
+              title="No invoices currently issued"
+              description="Create structured retainer invoices with automated itemized services and payment instructions."
+              actionLabel="Create Invoice"
+              onAction={() => setIsInvoiceModalOpen(true)}
+            />
+          ) : (
+            <Table
+              columns={invoiceColumns}
+              data={invoices}
+              keyExtractor={(inv) => inv.id}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* Tab: Payments */}
+      {activeTab === 'payments' && (
+        <Card>
+          <CardHeader
+            title="Payment Receipts & Collections"
+            subtitle="All verified client payments recorded against issued invoices."
+          />
+          {payments.length === 0 ? (
+            <EmptyState
+              icon={<CreditCard className="w-6 h-6 text-slate-400" />}
+              title="No payments recorded yet"
+              description="Payments recorded against invoices will appear here in chronological order."
+            />
+          ) : (
+            <Table
+              columns={paymentColumns}
+              data={payments}
+              keyExtractor={(p) => p.id}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* Tab: Expenses */}
+      {activeTab === 'expenses' && (
+        <Card>
+          <CardHeader
+            title="Agency Operating Expenses"
+            subtitle="Strictly internal agency costs (servers, proxies, software tools, freelancer fees)."
+          />
+          {expenses.length === 0 ? (
+            <EmptyState
+              icon={<ArrowDownRight className="w-6 h-6 text-slate-400" />}
+              title="No operating expenses recorded"
+              description="Record recurring infrastructure or operational costs to monitor agency net margin."
+              actionLabel="Record Expense"
+              onAction={() => setIsExpenseModalOpen(true)}
+            />
+          ) : (
+            <Table
+              columns={expenseColumns}
+              data={expenses}
+              keyExtractor={(exp) => exp.id}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* Tab: Ledger */}
+      {activeTab === 'ledger' && (
+        <Card>
+          <CardHeader
+            title="Financial Cashflow Ledger"
+            subtitle="Combined ledger of inbound client payments and outbound operational expenses."
+          />
+          {transactions.length === 0 ? (
+            <EmptyState
+              icon={<DollarSign className="w-6 h-6 text-slate-400" />}
+              title="Ledger is empty"
+              description="Income and expense records will automatically generate here when payments or expenses are logged."
+            />
+          ) : (
+            <Table
+              columns={transactionColumns}
+              data={transactions}
+              keyExtractor={(t) => t.id}
+            />
+          )}
+        </Card>
+      )}
+
+      {/* MODAL 1: Create Invoice */}
+      <Modal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        title="Issue New Client Invoice"
+        description="Line items automatically calculate subtotal, tax percentage, discount, and balance due."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleCreateInvoiceSubmit} className="space-y-4">
+          {invoiceFormError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{invoiceFormError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Client Organization <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={selectedClientId}
+                onChange={(e) => setSelectedClientId(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                required
+              >
+                <option value="">Select a client...</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName} ({c.currency})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Currency <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={invoiceCurrency}
+                onChange={(e) => setInvoiceCurrency(e.target.value as 'USD' | 'BDT')}
+                className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="USD">USD ($ - United States Dollar)</option>
+                <option value="BDT">BDT (৳ - Bangladeshi Taka)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Input
+              type="date"
+              label="Due Date"
+              value={invoiceDueDate}
+              onChange={(e) => setInvoiceDueDate(e.target.value)}
+              required
+            />
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              label="Tax Rate (%)"
+              value={invoiceTaxRate}
+              onChange={(e) => setInvoiceTaxRate(parseFloat(e.target.value) || 0)}
+              helperText="E.g. 5 for 5% VAT / Sales Tax"
+            />
+            <Input
+              type="number"
+              min="0"
+              step="1"
+              label="Discount ($)"
+              value={invoiceDiscount}
+              onChange={(e) => setInvoiceDiscount(parseFloat(e.target.value) || 0)}
+            />
+          </div>
+
+          {/* Line Items Builder */}
+          <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800">Itemized Services & Deliverables</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                icon={<Plus className="w-3 h-3" />}
+                onClick={() =>
+                  setLineItems([
+                    ...lineItems,
+                    { description: '', quantity: 1, unitPrice: 500 },
+                  ])
+                }
+              >
+                Add Item
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              {lineItems.map((item, index) => {
+                const rowAmount = Math.round((item.quantity || 1) * (item.unitPrice || 0) * 100) / 100;
+                return (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-center bg-white p-2 rounded border border-slate-200">
+                    <div className="col-span-6">
+                      <input
+                        type="text"
+                        placeholder="Service description (e.g. Meta CAPI Setup)"
+                        value={item.description}
+                        onChange={(e) => {
+                          const updated = [...lineItems];
+                          updated[index].description = e.target.value;
+                          setLineItems(updated);
+                        }}
+                        className="w-full text-xs py-1.5 px-2 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const updated = [...lineItems];
+                          updated[index].quantity = parseInt(e.target.value) || 1;
+                          setLineItems(updated);
+                        }}
+                        className="w-full text-xs py-1.5 px-2 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-none text-right"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Price"
+                        value={item.unitPrice}
+                        onChange={(e) => {
+                          const updated = [...lineItems];
+                          updated[index].unitPrice = parseFloat(e.target.value) || 0;
+                          setLineItems(updated);
+                        }}
+                        className="w-full text-xs py-1.5 px-2 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-none text-right"
+                        required
+                      />
+                    </div>
+                    <div className="col-span-1 text-right text-xs font-semibold text-slate-700">
+                      ${rowAmount}
+                    </div>
+                    <div className="col-span-1 text-right">
+                      {lineItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLineItems(lineItems.filter((_, i) => i !== index));
+                          }}
+                          className="text-slate-400 hover:text-rose-600 p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Calculations Breakdown */}
+            <div className="mt-3 pt-3 border-t border-slate-200 text-xs space-y-1 text-slate-600">
+              <div className="flex justify-between">
+                <span>Subtotal:</span>
+                <span className="font-semibold text-slate-800">
+                  {invoiceCurrency} {invoiceCalculations.subtotal.toFixed(2)}
+                </span>
+              </div>
+              {invoiceCalculations.tax > 0 && (
+                <div className="flex justify-between">
+                  <span>Tax ({invoiceTaxRate}%):</span>
+                  <span className="font-semibold text-slate-800">
+                    +{invoiceCurrency} {invoiceCalculations.tax.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {invoiceCalculations.discount > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Discount:</span>
+                  <span className="font-semibold">
+                    -{invoiceCurrency} {invoiceCalculations.discount.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm font-bold text-slate-900 pt-1 border-t border-slate-200">
+                <span>Total Amount Due:</span>
+                <span className="text-blue-700">
+                  {invoiceCurrency} {invoiceCalculations.total.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <Input
+            label="Payment Notes & Wire Instructions"
+            value={invoiceNotes}
+            onChange={(e) => setInvoiceNotes(e.target.value)}
+            placeholder="E.g. Pay via Eastern Bank wire or bKash Merchant 01700000000"
+          />
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsInvoiceModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={invoiceSubmitting}
+            >
+              {invoiceSubmitting ? 'Generating Invoice...' : 'Issue Invoice'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL 2: Record Payment (Partial / Full with Overpayment Guard) */}
+      <Modal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        title="Record Payment Receipt"
+        description="Records a partial or full payment against the selected invoice via an atomic Firestore transaction."
+        maxWidth="md"
+      >
+        {selectedInvoiceForPayment && (
+          <form onSubmit={handleRecordPaymentSubmit} className="space-y-4">
+            {paymentError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{paymentError}</span>
+              </div>
+            )}
+
+            {/* Invoice Summary Banner */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Invoice:</span>
+                <span className="font-semibold text-slate-800">{selectedInvoiceForPayment.invoiceNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Client:</span>
+                <span className="font-semibold text-slate-800">{selectedInvoiceForPayment.clientName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Invoice Amount:</span>
+                <span className="font-semibold text-slate-800">
+                  {selectedInvoiceForPayment.currency} {selectedInvoiceForPayment.totalAmount.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Already Paid:</span>
+                <span className="font-semibold text-emerald-700">
+                  {selectedInvoiceForPayment.currency} {(selectedInvoiceForPayment.paidAmount || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200 font-bold">
+                <span className="text-rose-700">Remaining Balance Due:</span>
+                <span className="text-rose-700">
+                  {selectedInvoiceForPayment.currency} {selectedInvoiceForPayment.balanceDue.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700">
+                  Payment Amount <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setPaymentAmount(selectedInvoiceForPayment.balanceDue)}
+                  className="text-[11px] font-medium text-blue-600 hover:text-blue-800"
+                >
+                  Pay Full Balance (${selectedInvoiceForPayment.balanceDue})
+                </button>
+              </div>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={selectedInvoiceForPayment.balanceDue}
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                required
+                error={
+                  paymentAmount > selectedInvoiceForPayment.balanceDue
+                    ? 'Payment amount exceeds balance due (overpayment prohibited)'
+                    : undefined
+                }
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Payment Method <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                  className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="bank_transfer">Bank Wire / ACH</option>
+                  <option value="stripe">Stripe</option>
+                  <option value="bkash">bKash Merchant</option>
+                  <option value="nagad">Nagad</option>
+                  <option value="wise">Wise</option>
+                  <option value="cash">Cash / Cheque</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <Input
+                type="date"
+                label="Payment Date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                required
+              />
+            </div>
+
+            <Input
+              label="Transaction / Reference ID"
+              placeholder="E.g. TrxID 9K48LA or Wire Ref 00291"
+              value={paymentRefNumber}
+              onChange={(e) => setPaymentRefNumber(e.target.value)}
+            />
+
+            <Input
+              label="Payment Notes"
+              placeholder="Optional notes regarding confirmation receipt"
+              value={paymentNotes}
+              onChange={(e) => setPaymentNotes(e.target.value)}
+            />
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPaymentModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={
+                  paymentSubmitting ||
+                  paymentAmount <= 0 ||
+                  paymentAmount > selectedInvoiceForPayment.balanceDue
+                }
+              >
+                {paymentSubmitting ? 'Recording...' : 'Confirm Payment'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL 3: Record Agency Operating Expense */}
+      <Modal
+        isOpen={isExpenseModalOpen}
+        onClose={() => setIsExpenseModalOpen(false)}
+        title="Record Agency Operational Expense"
+        description="Records internal operational overhead (servers, software tools, proxies) in the agency financial ledger."
+        maxWidth="md"
+      >
+        <form onSubmit={handleCreateExpenseSubmit} className="space-y-4">
+          {expenseError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{expenseError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Expense Category <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={expenseCategory}
+              onChange={(e) => setExpenseCategory(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              <option value="Server & Tracking Infrastructure">Server & Tracking Infrastructure (Stape, Cloud Run)</option>
+              <option value="Software & SaaS">Software & SaaS (Looker, Figma, Google Workspace)</option>
+              <option value="Media & Ad Credits">Ad Credits & Agency Media Testing</option>
+              <option value="Freelancer & Contractors">Freelancer & Contractor Fees</option>
+              <option value="Office & Miscellaneous">Office & Miscellaneous</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Vendor / Provider"
+              placeholder="E.g. Stape.io or Google Cloud"
+              value={expenseVendor}
+              onChange={(e) => setExpenseVendor(e.target.value)}
+              required
+            />
+            <Input
+              type="date"
+              label="Date"
+              value={expenseDate}
+              onChange={(e) => setExpenseDate(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              label="Amount"
+              value={expenseAmount}
+              onChange={(e) => setExpenseAmount(parseFloat(e.target.value) || 0)}
+              required
+            />
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Currency <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={expenseCurrency}
+                onChange={(e) => setExpenseCurrency(e.target.value as 'USD' | 'BDT')}
+                className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="USD">USD ($)</option>
+                <option value="BDT">BDT (৳)</option>
+              </select>
+            </div>
+          </div>
+
+          <Input
+            label="Description / Purpose"
+            placeholder="E.g. Monthly server-side tagging hosting for client containers"
+            value={expenseDescription}
+            onChange={(e) => setExpenseDescription(e.target.value)}
+            required
+          />
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsExpenseModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={expenseSubmitting}
+            >
+              {expenseSubmitting ? 'Recording...' : 'Record Expense'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

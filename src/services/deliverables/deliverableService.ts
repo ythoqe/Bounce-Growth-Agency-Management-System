@@ -280,10 +280,11 @@ export async function reviewDeliverable(
 export function subscribeDeliverables(
   filters: { clientId?: string; projectId?: string; status?: string },
   callback: (deliverables: Deliverable[]) => void,
-  actor: { uid: string; role: 'admin' | 'team' | 'client'; clientId?: string },
+  actor: { uid?: string; id?: string; role: 'admin' | 'team' | 'client'; clientId?: string },
   onError?: (error: Error) => void
 ): () => void {
-  if (!actor.uid) {
+  const actorUid = actor.uid || actor.id;
+  if (!actorUid) {
     callback([]);
     return () => {};
   }

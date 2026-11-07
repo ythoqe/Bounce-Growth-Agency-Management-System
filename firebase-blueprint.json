@@ -221,18 +221,20 @@
         "invoiceNumber": { "type": "string", "maxLength": 50 },
         "clientId": { "type": "string" },
         "clientName": { "type": "string" },
-        "status": { "type": "string", "enum": ["draft", "issued", "paid", "overdue", "voided"] },
+        "status": { "type": "string", "enum": ["draft", "issued", "partially_paid", "paid", "overdue", "voided"] },
         "issueDate": { "type": "string" },
         "dueDate": { "type": "string" },
         "subtotal": { "type": "number" },
         "tax": { "type": "number" },
         "discount": { "type": "number" },
         "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "balanceDue": { "type": "number" },
         "currency": { "type": "string", "enum": ["USD", "BDT"] },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["invoiceNumber", "clientId", "status", "issueDate", "dueDate", "totalAmount", "currency"]
+      "required": ["invoiceNumber", "clientId", "status", "issueDate", "dueDate", "totalAmount", "paidAmount", "balanceDue", "currency"]
     },
     "Expense": {
       "title": "Agency Expense",
@@ -249,6 +251,43 @@
         "recordedByUserId": { "type": "string" }
       },
       "required": ["category", "description", "vendor", "amount", "currency", "date", "recordedByUserId"]
+    },
+    "Payment": {
+      "title": "Invoice Payment",
+      "description": "Payment receipt recorded against a client invoice",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentDate": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["bank_transfer", "stripe", "bkash", "nagad", "wise", "cash", "other"] },
+        "referenceNumber": { "type": "string", "maxLength": 100 },
+        "recordedBy": { "type": "string" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceId", "clientId", "amount", "paymentDate", "paymentMethod", "recordedBy"]
+    },
+    "Transaction": {
+      "title": "Financial Transaction",
+      "description": "Financial ledger record for revenue or operating costs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "BDT"] },
+        "category": { "type": "string" },
+        "description": { "type": "string", "maxLength": 255 },
+        "referenceId": { "type": "string" },
+        "date": { "type": "string" },
+        "recordedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "amount", "currency", "category", "description", "date", "recordedBy"]
     },
     "AuditLog": {
       "title": "Audit Log",
@@ -334,6 +373,14 @@
     "/invoices/{invoiceId}": {
       "schema": "Invoice",
       "description": "Client billing invoices"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Invoice payment receipts and collections"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Agency financial income and expense ledger"
     },
     "/expenses/{expenseId}": {
       "schema": "Expense",

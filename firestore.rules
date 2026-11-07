@@ -158,8 +158,22 @@ service cloud.firestore {
       return data.clientId is string && isValidId(data.clientId) &&
         data.invoiceNumber is string && data.invoiceNumber.size() <= 50 &&
         data.totalAmount is number && data.totalAmount >= 0 &&
-        data.status in ['draft', 'issued', 'paid', 'overdue', 'voided'] &&
+        data.status in ['draft', 'issued', 'partially_paid', 'paid', 'overdue', 'voided'] &&
         data.currency in ['USD', 'BDT'];
+    }
+
+    function isValidPayment(data) {
+      return data.invoiceId is string && isValidId(data.invoiceId) &&
+        data.clientId is string && isValidId(data.clientId) &&
+        data.amount is number && data.amount > 0 &&
+        data.paymentMethod in ['bank_transfer', 'stripe', 'bkash', 'nagad', 'wise', 'cash', 'other'];
+    }
+
+    function isValidTransaction(data) {
+      return data.type in ['income', 'expense'] &&
+        data.amount is number && data.amount > 0 &&
+        data.currency in ['USD', 'BDT'] &&
+        data.category is string && data.category.size() <= 60;
     }
 
     function isValidExpense(data) {
@@ -213,6 +227,7 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if isValidId(userId) && isSignedIn() && request.auth.uid == userId &&
         (incoming().role != 'admin' || isBootstrapAdmin()) &&
+        (!('clientId' in incoming()) || isBootstrapAdmin()) &&
         isValidUser(incoming());
       allow update: if isValidId(userId) && isSignedIn() && isValidUser(incoming()) && (
         isAdmin() ||
@@ -457,6 +472,24 @@ service cloud.firestore {
         incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
       );
       allow delete: if isAdmin() && isValidId(invoiceId);
+    }
+
+    // Payments (Recorded against invoices)
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && (
+        isAdmin() ||
+        isClientOwner(existing().clientId)
+      );
+      allow list: if isAdmin() || (
+        isClientUser() &&
+        resource.data.clientId == getCallerProfile().clientId
+      );
+      allow create, update, delete: if isAdmin() && isValidId(paymentId) && isValidPayment(incoming());
+    }
+
+    // Transactions (Agency cashflow ledger - strictly admin)
+    match /transactions/{transactionId} {
+      allow read, write: if isAdmin() && isValidId(transactionId) && (request.resource == null || isValidTransaction(incoming()));
     }
 
     // Expenses (Agency internal operating costs - strictly admin)

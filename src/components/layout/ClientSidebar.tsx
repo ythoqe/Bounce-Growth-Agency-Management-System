@@ -21,11 +21,11 @@ interface ClientSidebarProps {
 }
 
 const clientNavItems = [
-  { name: 'Portal Overview', href: '/portal', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/portal/dashboard', icon: LayoutDashboard },
   { name: 'Active Projects', href: '/portal/projects', icon: Briefcase },
-  { name: 'Tasks & Approvals', href: '/portal/tasks', icon: CheckCircle2 },
   { name: 'Invoices & Billing', href: '/portal/invoices', icon: Receipt },
   { name: 'Performance Reports', href: '/portal/reports', icon: BarChart2 },
+  { name: 'Tasks & Approvals', href: '/portal/tasks', icon: CheckCircle2 },
   { name: 'Shared Documents', href: '/portal/documents', icon: FileCheck },
   { name: 'Support & Requests', href: '/portal/support', icon: MessageSquare },
 ];
@@ -90,7 +90,7 @@ export function ClientSidebar({ isOpen, onClose }: ClientSidebarProps) {
             <NavLink
               key={item.href}
               to={item.href}
-              end={item.href === '/portal'}
+              end={item.href === '/portal' || item.href === '/portal/dashboard'}
               onClick={() => onClose()}
               className={({ isActive }) =>
                 cn(

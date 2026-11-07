@@ -1,13 +1,27 @@
-export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'overdue' | 'voided';
-export type PaymentMethod = 'bank_transfer' | 'stripe' | 'bkash' | 'nagad' | 'wise' | 'other';
+export type InvoiceStatus =
+  | 'draft'
+  | 'issued'
+  | 'partially_paid'
+  | 'paid'
+  | 'overdue'
+  | 'voided';
+
+export type PaymentMethod =
+  | 'bank_transfer'
+  | 'stripe'
+  | 'bkash'
+  | 'nagad'
+  | 'wise'
+  | 'cash'
+  | 'other';
 
 export interface InvoiceItem {
   id: string;
   description: string;
-  serviceCategory?: string;
   quantity: number;
   unitPrice: number;
-  total: number;
+  amount: number;
+  serviceCategory?: string;
 }
 
 export interface Invoice {
@@ -21,9 +35,12 @@ export interface Invoice {
   items: InvoiceItem[];
   subtotal: number;
   tax: number;
-  discount: number;
+  taxRate?: number; // e.g. 5 for 5%
+  discount?: number;
   totalAmount: number;
-  currency: 'BDT' | 'USD';
+  paidAmount: number;
+  balanceDue: number;
+  currency: 'USD' | 'BDT';
   paidAt?: string;
   paymentMethod?: PaymentMethod;
   paymentReference?: string;
@@ -32,15 +49,48 @@ export interface Invoice {
   updatedAt: string;
 }
 
-export interface AgencyExpense {
+export interface Payment {
   id: string;
-  category: 'tool_subscription' | 'contractor' | 'server_hosting' | 'office' | 'marketing' | 'other';
+  invoiceId: string;
+  clientId: string;
+  clientName?: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: PaymentMethod;
+  referenceNumber?: string;
+  recordedBy: string; // Admin UID
+  recordedByName?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface Expense {
+  id: string;
+  category: string;
   description: string;
   vendor: string;
   amount: number;
-  currency: 'BDT' | 'USD';
+  currency: 'USD' | 'BDT';
   date: string;
   recordedByUserId: string;
   receiptUrl?: string;
-  // STRICT: Internal agency only. Never exposed to clients.
+  createdAt: string;
+  updatedAt?: string;
+}
+
+// Backward compatibility alias
+export type AgencyExpense = Expense;
+
+export interface Transaction {
+  id: string;
+  type: 'income' | 'expense';
+  amount: number;
+  currency: 'USD' | 'BDT';
+  category: string;
+  description: string;
+  referenceId?: string; // invoiceId, paymentId, or expenseId
+  referenceType?: 'invoice' | 'payment' | 'expense';
+  date: string;
+  recordedBy: string;
+  createdAt: string;
 }

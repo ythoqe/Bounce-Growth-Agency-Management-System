@@ -16,6 +16,7 @@ import { ContentCalendarPage } from '../features/marketing/ContentCalendarPage';
 import { DocumentsPage } from '../features/documents/DocumentsPage';
 import { KnowledgeBasePage } from '../features/sop/KnowledgeBasePage';
 import { FinancePage } from '../features/finance/FinancePage';
+import { InvoicesPage } from '../features/finance/InvoicesPage';
 import { ServicesPricingPage } from '../features/services/ServicesPricingPage';
 import { TeamPage } from '../features/team/TeamPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -33,7 +34,7 @@ import { ClientSupportPage } from '../features/client-portal/ClientSupportPage';
 function RootRedirect() {
   const { currentRole } = useAuth();
   if (currentRole === 'client') {
-    return <Navigate to="/portal" replace />;
+    return <Navigate to="/portal/dashboard" replace />;
   }
   return <Navigate to="/admin" replace />;
 }
@@ -63,25 +64,39 @@ export function AppRoutes() {
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="sop" element={<KnowledgeBasePage />} />
         <Route path="finance" element={<FinancePage />} />
+        <Route path="finance/invoices" element={<InvoicesPage />} />
         <Route path="services" element={<ServicesPricingPage />} />
         <Route path="team" element={<TeamPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
-      {/* Client Portal Routes */}
+      {/* Direct /finance/invoices route requested by user */}
+      <Route
+        path="/finance/invoices"
+        element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<InvoicesPage />} />
+      </Route>
+
+      {/* Client Portal Routes - Restricted strictly to role 'client' */}
       <Route
         path="/portal"
         element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={['client']}>
             <ClientLayout />
           </ProtectedRoute>
         }
       >
-        <Route index element={<ClientDashboardPage />} />
+        <Route index element={<Navigate to="/portal/dashboard" replace />} />
+        <Route path="dashboard" element={<ClientDashboardPage />} />
         <Route path="projects" element={<ClientProjectsPage />} />
-        <Route path="tasks" element={<ClientTasksPage />} />
         <Route path="invoices" element={<ClientInvoicesPage />} />
         <Route path="reports" element={<ClientReportsPage />} />
+        <Route path="tasks" element={<ClientTasksPage />} />
         <Route path="documents" element={<ClientDocumentsPage />} />
         <Route path="support" element={<ClientSupportPage />} />
       </Route>

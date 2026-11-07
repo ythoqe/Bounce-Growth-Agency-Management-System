@@ -17,6 +17,7 @@ import {
   Settings,
   X,
   Target,
+  Receipt,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -62,7 +63,8 @@ const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: 'AGENCY MANAGEMENT',
     items: [
-      { name: 'Finance & Invoicing', href: '/admin/finance', icon: DollarSign, adminOnly: true },
+      { name: 'Invoices', href: '/finance/invoices', icon: Receipt, adminOnly: true },
+      { name: 'Finance & Ledger', href: '/admin/finance', icon: DollarSign, adminOnly: true },
       { name: 'Services & Pricing', href: '/admin/services', icon: Tag, adminOnly: true },
       { name: 'Team Members', href: '/admin/team', icon: UserCheck, adminOnly: true },
       { name: 'Settings & Audit', href: '/admin/settings', icon: Settings, adminOnly: true },

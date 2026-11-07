@@ -6,6 +6,8 @@ export type AuditActionType =
   | 'client_deleted'
   | 'invoice_issued'
   | 'invoice_paid'
+  | 'payment_recorded'
+  | 'expense_recorded'
   | 'asset_credential_accessed'
   | 'asset_modified'
   | 'project_status_changed'
@@ -35,6 +37,9 @@ export interface AuditLogEntry {
     | 'deliverable'
     | 'support_ticket'
     | 'invoice'
+    | 'payment'
+    | 'expense'
+    | 'transaction'
     | 'asset'
     | 'document'
     | 'system';

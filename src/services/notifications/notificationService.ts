@@ -10,7 +10,7 @@ import {
   writeBatch,
   getDocs,
 } from 'firebase/firestore';
-import { db } from '../firebase/client';
+import { auth, db } from '../firebase/client';
 import { AppNotification } from '../../types/communication';
 import { AppNotificationSchema } from '../../schemas';
 import { handleFirestoreError, OperationType } from '../firebase/firestoreErrors';
@@ -42,7 +42,7 @@ export function subscribeMyNotifications(
   callback: (notifications: AppNotification[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  if (!userUid) {
+  if (!auth?.currentUser || !userUid) {
     callback([]);
     return () => {};
   }

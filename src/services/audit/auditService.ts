@@ -7,7 +7,7 @@ export async function logAuditEvent(params: {
   actorEmail: string;
   actorRole: string;
   action: AuditActionType;
-  entityType: 'client' | 'project' | 'asset' | 'user' | 'system';
+  entityType: AuditLogEntry['entityType'];
   entityId: string;
   details: string;
   status?: 'success' | 'failure';

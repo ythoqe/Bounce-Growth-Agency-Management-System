@@ -9,20 +9,35 @@ import {
 } from '../../services/notifications/notificationService';
 
 export function NotificationDropdown() {
-  const { firebaseUser, devUser, isLiveAuth } = useAuth();
-  const currentUid = isLiveAuth ? firebaseUser?.uid : devUser.uid;
+  const { firebaseUser, isLiveAuth } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!currentUid) return;
-    const unsub = subscribeMyNotifications(currentUid, (items) => {
+    if (!isLiveAuth || !firebaseUser?.uid) {
+      setNotifications([
+        {
+          id: 'dev_notif_1',
+          recipientUid: 'dev_user',
+          type: 'deliverable_submitted',
+          title: 'Deliverable Ready for Review',
+          message: 'Bounce Growth submitted: GA4 Enhanced E-commerce Audit for review',
+          relatedEntityType: 'deliverable',
+          relatedEntityId: 'deliv_sample',
+          read: false,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      return;
+    }
+
+    const unsub = subscribeMyNotifications(firebaseUser.uid, (items) => {
       setNotifications(items);
     });
     return () => unsub();
-  }, [currentUid]);
+  }, [isLiveAuth, firebaseUser?.uid]);
 
   // Click outside listener
   useEffect(() => {
@@ -54,6 +69,22 @@ export function NotificationDropdown() {
     }
   };
 
+  const handleMarkAllRead = () => {
+    if (isLiveAuth && firebaseUser?.uid) {
+      markAllNotificationsAsRead(firebaseUser.uid);
+    } else {
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    }
+  };
+
+  const handleMarkOneRead = (id: string) => {
+    if (isLiveAuth) {
+      markNotificationAsRead(id);
+    } else {
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    }
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
@@ -82,9 +113,7 @@ export function NotificationDropdown() {
             </div>
             {unreadCount > 0 && (
               <button
-                onClick={() => {
-                  if (currentUid) markAllNotificationsAsRead(currentUid);
-                }}
+                onClick={handleMarkAllRead}
                 className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 cursor-pointer"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
@@ -127,7 +156,7 @@ export function NotificationDropdown() {
                     </p>
                     {!notif.read && (
                       <button
-                        onClick={() => markNotificationAsRead(notif.id)}
+                        onClick={() => handleMarkOneRead(notif.id)}
                         className="mt-1.5 text-[10px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 cursor-pointer"
                       >
                         <Check className="w-3 h-3" /> Mark as read

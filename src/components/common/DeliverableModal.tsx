@@ -137,7 +137,7 @@ export function DeliverableModal({
           ? 'Review the findings or verification dashboard provided by Bounce Growth.'
           : 'Provide milestone details, findings, or verified external dashboard URLs (Looker Studio, GTM Preview, etc.).'
       }
-      maxWidth="max-w-2xl"
+      maxWidth="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (

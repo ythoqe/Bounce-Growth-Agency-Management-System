@@ -1,6 +1,12 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer, type Firestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  doc,
+  getDocFromServer,
+  type Firestore,
+} from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import firebaseConfig from '../../../firebase-applet-config.json';
 
@@ -15,8 +21,23 @@ export interface FirebaseConfigStatus {
 
 const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
-// CRITICAL: Must pass databaseId from config
-export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// CRITICAL: Initialize Firestore with experimentalAutoDetectLongPolling enabled
+// for reliable connections inside web iframes, proxies, and restricted networks.
+function getOrInitFirestore(): Firestore {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+      },
+      firebaseConfig.firestoreDatabaseId
+    );
+  } catch {
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+}
+
+export const db: Firestore = getOrInitFirestore();
 export const auth: Auth = getAuth(app);
 export const storage: FirebaseStorage = getStorage(app);
 
@@ -30,22 +51,16 @@ export const firebaseStatus: FirebaseConfigStatus = {
 };
 
 /**
- * Validate Connection to Cloud Firestore on boot
+ * Validate Connection to Cloud Firestore on boot (per Skill specification)
  */
 export async function testConnection(): Promise<boolean> {
   try {
     const testDoc = await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log('[Firebase Firestore] Live server connectivity verified. Exists:', testDoc.exists());
-    return true;
+    return testDoc.exists();
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('[Firebase Firestore] Client appears offline. Check network or config.');
-    } else {
-      console.log('[Firebase Firestore] Connectivity test response:', error);
+      console.warn('[Firebase Firestore] Client operating in offline mode or waiting for connection.');
     }
     return false;
   }
 }
-
-// Initial connectivity test
-testConnection();

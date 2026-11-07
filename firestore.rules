@@ -183,6 +183,21 @@ service cloud.firestore {
         data.recordedByUserId is string && data.recordedByUserId == request.auth.uid;
     }
 
+    function isValidServicePackage(data) {
+      return data.name is string && data.name.size() <= 120 &&
+        data.priceRange is string && data.priceRange.size() <= 60 &&
+        data.currency in ['USD', 'BDT'] &&
+        data.isActive is bool;
+    }
+
+    function isValidService(data) {
+      return data.name is string && data.name.size() <= 120 &&
+        data.category is string && data.category.size() <= 60 &&
+        data.priceRange is string && data.priceRange.size() <= 60 &&
+        data.currency in ['USD', 'BDT'] &&
+        data.isActive is bool;
+    }
+
     function isValidAuditLog(data) {
       return data.actorUserId is string && data.actorUserId == request.auth.uid &&
         data.actorEmail is string && data.actorEmail == request.auth.token.email &&
@@ -497,15 +512,56 @@ service cloud.firestore {
       allow read, write: if isAdmin() && isValidId(expenseId) && (request.resource == null || isValidExpense(incoming()));
     }
 
+    // Service Packages & Offerings
+    match /service_packages/{packageId} {
+      allow read: if isSignedIn() && isValidId(packageId);
+      allow write: if isAdmin() && isValidId(packageId) && (request.resource == null || isValidServicePackage(incoming()));
+    }
+
+    // Individual Services
+    match /services/{serviceId} {
+      allow read: if isSignedIn() && isValidId(serviceId);
+      allow write: if isAdmin() && isValidId(serviceId) && (request.resource == null || isValidService(incoming()));
+    }
+
     // SOPs & Knowledge Base
     match /sops/{sopId} {
       allow read: if (isAdmin() || isTeam()) && isValidId(sopId);
       allow write: if (isAdmin() || isTeam()) && isValidId(sopId);
     }
 
-    // Campaign Calendar
+    // Content Items & Campaign Calendar
+    match /content_items/{itemId} {
+      allow read, write: if (isAdmin() || isTeam()) && isValidId(itemId);
+    }
+
     match /campaign_calendar/{entryId} {
       allow read, write: if (isAdmin() || isTeam()) && isValidId(entryId);
+    }
+
+    // Project Files / Document Management (Cloud Storage Metadata)
+    match /projectFiles/{fileId} {
+      allow read: if isValidId(fileId) && (
+        isAdmin() ||
+        isTeam() ||
+        (
+          isClientUser() &&
+          resource.data.visibility == 'client' &&
+          resource.data.clientId == getCallerProfile().clientId
+        )
+      );
+      allow create: if isValidId(fileId) && (isAdmin() || isTeam()) && (
+        incoming().fileName is string &&
+        incoming().fileUrl is string &&
+        incoming().projectId is string &&
+        incoming().clientId is string &&
+        incoming().uploadedBy is string &&
+        incoming().visibility in ['client', 'internal']
+      );
+      allow update: if isValidId(fileId) && (isAdmin() || isTeam()) && (
+        incoming().visibility in ['client', 'internal']
+      );
+      allow delete: if isValidId(fileId) && (isAdmin() || isTeam());
     }
 
     // Audit Logs (Immutable, append-only)

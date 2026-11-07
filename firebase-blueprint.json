@@ -339,6 +339,67 @@
         "claimedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "clientId", "clientName", "contactEmail", "contactName", "role", "status", "invitedBy", "createdAt", "expiresAt", "expiresAtMillis"]
+    },
+    "ServicePackage": {
+      "title": "Agency Service Package",
+      "description": "Tiered growth, tracking, or retainer package offered by Bounce Growth",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string" },
+        "priceMin": { "type": "number" },
+        "priceMax": { "type": "number" },
+        "priceRange": { "type": "string" },
+        "currency": { "type": "string", "enum": ["USD", "BDT"] },
+        "billingType": { "type": "string", "enum": ["one_time", "monthly_retainer", "sprint"] },
+        "features": { "type": "array" },
+        "category": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "linkedProjectIds": { "type": "array" }
+      },
+      "required": ["id", "name", "priceRange", "currency", "isActive"]
+    },
+    "AgencyService": {
+      "title": "Individual Agency Service",
+      "description": "Granular technical service or tracking deliverable",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "priceRange": { "type": "string" },
+        "currency": { "type": "string", "enum": ["USD", "BDT"] },
+        "features": { "type": "array" },
+        "isActive": { "type": "boolean" },
+        "linkedProjectIds": { "type": "array" }
+      },
+      "required": ["id", "name", "category", "priceRange", "currency", "isActive"]
+    },
+    "ProjectFile": {
+      "title": "Project File Document",
+      "description": "Metadata for files and documents uploaded to Cloud Storage for Firebase",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "fileType": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "uploadedByName": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["client", "internal"] },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fileName", "fileUrl", "projectId", "clientId", "uploadedBy", "visibility"]
     }
   },
   "firestore": {
@@ -409,6 +470,22 @@
     "/notifications/{notificationId}": {
       "schema": "AppNotification",
       "description": "Role-specific and recipient-targeted system notifications"
+    },
+    "/service_packages/{packageId}": {
+      "schema": "ServicePackage",
+      "description": "Standardized agency pricing rate cards and retainer packages"
+    },
+    "/services/{serviceId}": {
+      "schema": "AgencyService",
+      "description": "Individual technical services offered by agency specialists"
+    },
+    "/content_items/{itemId}": {
+      "schema": "ContentItem",
+      "description": "Marketing ad creatives, captions, platform distributions, and publication dates"
+    },
+    "/projectFiles/{fileId}": {
+      "schema": "ProjectFile",
+      "description": "Uploaded project files and documents with client or internal visibility"
     }
   }
 }

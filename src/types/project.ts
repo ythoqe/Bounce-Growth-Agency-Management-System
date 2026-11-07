@@ -21,4 +21,7 @@ export interface Project {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  packageId?: string;
+  packageName?: string;
+  packagePricing?: string;
 }

@@ -61,6 +61,7 @@ export function AppRoutes() {
         <Route path="assets" element={<TrackingAssetsPage />} />
         <Route path="reports" element={<ReportsAnalyticsPage />} />
         <Route path="marketing" element={<ContentCalendarPage />} />
+        <Route path="marketing/content" element={<ContentCalendarPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="sop" element={<KnowledgeBasePage />} />
         <Route path="finance" element={<FinancePage />} />
@@ -68,6 +69,18 @@ export function AppRoutes() {
         <Route path="services" element={<ServicesPricingPage />} />
         <Route path="team" element={<TeamPage />} />
         <Route path="settings" element={<SettingsPage />} />
+      </Route>
+
+      {/* Direct /marketing/content route requested by user */}
+      <Route
+        path="/marketing/content"
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'team']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<ContentCalendarPage />} />
       </Route>
 
       {/* Direct /finance/invoices route requested by user */}
@@ -80,6 +93,30 @@ export function AppRoutes() {
         }
       >
         <Route index element={<InvoicesPage />} />
+      </Route>
+
+      {/* Direct /services route */}
+      <Route
+        path="/services"
+        element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<ServicesPricingPage />} />
+      </Route>
+
+      {/* Direct /documents route */}
+      <Route
+        path="/documents"
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'team']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<DocumentsPage />} />
       </Route>
 
       {/* Client Portal Routes - Restricted strictly to role 'client' */}

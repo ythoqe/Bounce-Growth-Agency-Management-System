@@ -7,3 +7,5 @@ export * from './audit';
 export * from './task';
 export * from './deliverable';
 export * from './communication';
+export * from './content';
+export * from './document';

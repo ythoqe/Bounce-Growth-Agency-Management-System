@@ -26,6 +26,7 @@ import {
   EyeOff,
   Info,
   Radio,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { TrackingAsset, TrackingAssetType } from '../../types/asset';
@@ -35,6 +36,7 @@ import {
   subscribeAssets,
   createTrackingAsset,
   updateTrackingAsset,
+  deleteTrackingAsset,
   archiveTrackingAsset,
   restoreTrackingAsset,
 } from '../../services/assets/assetService';
@@ -95,6 +97,25 @@ export function TrackingAssetsPage() {
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Delete Asset State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [assetToDelete, setAssetToDelete] = useState<TrackingAsset | null>(null);
+  const [isDeletingAsset, setIsDeletingAsset] = useState(false);
+
+  const handleDeleteAssetConfirm = async () => {
+    if (!assetToDelete) return;
+    try {
+      setIsDeletingAsset(true);
+      await deleteTrackingAsset(assetToDelete.id, assetToDelete.name, actor);
+      setIsDeleteModalOpen(false);
+      setAssetToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete asset');
+    } finally {
+      setIsDeletingAsset(false);
+    }
+  };
 
   useEffect(() => {
     if (!isLiveAuth || !firebaseUser) {
@@ -413,6 +434,19 @@ export function TrackingAssetsPage() {
             className="text-xs h-7 px-2"
           >
             {row.status === 'archived' ? 'Restore' : 'Archive'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAssetToDelete(row);
+              setIsDeleteModalOpen(true);
+            }}
+            icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+            className="text-xs h-7 px-2 text-red-600 hover:bg-red-50"
+            title="Delete Asset"
+          >
+            Delete
           </Button>
         </div>
       ),
@@ -794,6 +828,48 @@ export function TrackingAssetsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Delete Asset Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setAssetToDelete(null);
+        }}
+        title="Permanently Delete Tracking Asset"
+        description="Are you sure you want to permanently delete this tracking asset? This action cannot be undone."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setAssetToDelete(null);
+              }}
+              disabled={isDeletingAsset}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteAssetConfirm}
+              loading={isDeletingAsset}
+            >
+              Permanently Delete Asset
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{assetToDelete?.name}</p>
+          <p className="text-slate-600">Client: {assetToDelete?.clientName} • Type: {assetToDelete?.assetType}</p>
+          <p className="text-red-700 font-medium mt-2">
+            Warning: This action deletes the tracking asset document from Cloud Firestore.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

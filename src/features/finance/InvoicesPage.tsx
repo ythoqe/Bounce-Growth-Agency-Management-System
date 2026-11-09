@@ -27,7 +27,13 @@ import { Modal } from '../../components/common/Modal';
 import { Input } from '../../components/common/Input';
 import { useAuth } from '../auth/AuthContext';
 import { Invoice, PaymentMethod } from '../../types/finance';
-import { createInvoice, recordPayment, subscribeInvoices } from '../../services/financeService';
+import {
+  createInvoice,
+  recordPayment,
+  subscribeInvoices,
+  deleteInvoice,
+  voidInvoice,
+} from '../../services/financeService';
 import { subscribeClients } from '../../services/clients/clientService';
 import { ClientProfile } from '../../types/client';
 
@@ -80,9 +86,49 @@ export function InvoicesPage() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
+  // Delete & Void Invoice state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const [isDeletingInvoice, setIsDeletingInvoice] = useState(false);
+
   // Submission messages
   const [serverError, setServerError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const handleDeleteInvoice = async () => {
+    if (!invoiceToDelete) return;
+    try {
+      setIsDeletingInvoice(true);
+      await deleteInvoice(invoiceToDelete.id, invoiceToDelete.invoiceNumber, {
+        role: currentRole || 'admin',
+        uid: currentUser?.id,
+        email: currentUser?.email,
+      });
+      setIsDeleteModalOpen(false);
+      setInvoiceToDelete(null);
+      setActionSuccess('Invoice successfully deleted.');
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete invoice');
+    } finally {
+      setIsDeletingInvoice(false);
+    }
+  };
+
+  const handleVoidInvoice = async (inv: Invoice) => {
+    if (!confirm(`Are you sure you want to void invoice ${inv.invoiceNumber}?`)) return;
+    try {
+      await voidInvoice(inv.id, inv.invoiceNumber, {
+        role: currentRole || 'admin',
+        uid: currentUser?.id,
+        email: currentUser?.email,
+      });
+      setActionSuccess(`Invoice ${inv.invoiceNumber} has been voided.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to void invoice');
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // React Hook Form: Create Invoice
@@ -98,12 +144,12 @@ export function InvoicesPage() {
     resolver: zodResolver(createInvoiceSchema) as any,
     defaultValues: {
       clientId: '',
-      currency: 'USD',
+      currency: 'BDT',
       dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       taxRate: 0,
       discount: 0,
       notes: '',
-      items: [{ description: 'Performance Marketing & Retainer', quantity: 1, unitPrice: 1500 }],
+      items: [{ description: '', quantity: 1, unitPrice: 0 }],
     },
   });
 
@@ -507,22 +553,48 @@ export function InvoicesPage() {
                         {renderStatusBadge(invoice)}
                       </td>
 
-                      {/* 7. Action: Add Payment */}
+                      {/* 7. Actions: Add Payment, Void, Delete */}
                       <td className="px-4 py-3.5 text-right">
-                        {!isSettled ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!isSettled ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              icon={<CreditCard className="w-3.5 h-3.5 text-blue-600" />}
+                              onClick={() => onOpenAddPaymentModal(invoice)}
+                            >
+                              Add Payment
+                            </Button>
+                          ) : (
+                            <span className="text-[11px] font-medium text-emerald-700 px-2.5 py-1 bg-emerald-50 rounded border border-emerald-200">
+                              Fully Settled
+                            </span>
+                          )}
+
+                          {invoice.status !== 'voided' && invoice.status !== 'paid' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleVoidInvoice(invoice)}
+                              className="text-xs text-amber-600 hover:bg-amber-50"
+                              title="Void Invoice"
+                            >
+                              Void
+                            </Button>
+                          )}
+
                           <Button
                             size="sm"
-                            variant="outline"
-                            icon={<CreditCard className="w-3.5 h-3.5 text-blue-600" />}
-                            onClick={() => onOpenAddPaymentModal(invoice)}
-                          >
-                            Add Payment
-                          </Button>
-                        ) : (
-                          <span className="text-[11px] font-medium text-emerald-700 px-2.5 py-1 bg-emerald-50 rounded border border-emerald-200">
-                            Fully Settled
-                          </span>
-                        )}
+                            variant="ghost"
+                            onClick={() => {
+                              setInvoiceToDelete(invoice);
+                              setIsDeleteModalOpen(true);
+                            }}
+                            icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+                            className="text-xs hover:bg-red-50"
+                            title="Delete Invoice"
+                          />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -546,7 +618,7 @@ export function InvoicesPage() {
         description="Itemize agency deliverables. Subtotal, tax, discount, and total are auto-calculated."
         maxWidth="lg"
       >
-        <form onSubmit={handleInvoiceSubmit(onSubmitCreateInvoice)} className="space-y-4">
+        <form onSubmit={handleInvoiceSubmit(onSubmitCreateInvoice)} autoComplete="off" className="space-y-4">
           {serverError && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -584,8 +656,8 @@ export function InvoicesPage() {
                 {...registerInvoice('currency')}
                 className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
-                <option value="USD">USD ($ - United States Dollar)</option>
                 <option value="BDT">BDT (৳ - Bangladeshi Taka)</option>
+                <option value="USD">USD ($ - United States Dollar)</option>
               </select>
             </div>
           </div>
@@ -649,7 +721,7 @@ export function InvoicesPage() {
                 variant="outline"
                 size="sm"
                 icon={<Plus className="w-3 h-3" />}
-                onClick={() => append({ description: '', quantity: 1, unitPrice: 500 })}
+                onClick={() => append({ description: '', quantity: 1, unitPrice: 0 })}
               >
                 Add Item
               </Button>
@@ -671,6 +743,7 @@ export function InvoicesPage() {
                       <input
                         type="text"
                         placeholder="Description (e.g. Server-Side GTM Setup)"
+                        autoComplete="off"
                         {...registerInvoice(`items.${index}.description` as const)}
                         className="w-full text-xs py-1.5 px-2 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-none"
                       />
@@ -686,6 +759,7 @@ export function InvoicesPage() {
                         type="number"
                         min="1"
                         placeholder="Qty"
+                        autoComplete="off"
                         {...registerInvoice(`items.${index}.quantity` as const)}
                         className="w-full text-xs py-1.5 px-2 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-none text-right"
                       />
@@ -697,13 +771,14 @@ export function InvoicesPage() {
                         min="0"
                         step="0.01"
                         placeholder="Unit Price"
+                        autoComplete="off"
                         {...registerInvoice(`items.${index}.unitPrice` as const)}
                         className="w-full text-xs py-1.5 px-2 border border-slate-200 rounded focus:ring-1 focus:ring-blue-600 focus:outline-none text-right"
                       />
                     </div>
 
                     <div className="col-span-1 text-right text-xs font-semibold text-slate-800">
-                      ${lineAmount}
+                      {watchedCurrency === 'BDT' ? '৳' : '$'}{lineAmount}
                     </div>
 
                     <div className="col-span-1 text-right">
@@ -937,6 +1012,48 @@ export function InvoicesPage() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Delete Invoice Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setInvoiceToDelete(null);
+        }}
+        title="Permanently Delete Invoice"
+        description="Are you sure you want to permanently delete this invoice? This action cannot be undone."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setInvoiceToDelete(null);
+              }}
+              disabled={isDeletingInvoice}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteInvoice}
+              loading={isDeletingInvoice}
+            >
+              Permanently Delete Invoice
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{invoiceToDelete?.invoiceNumber} - {invoiceToDelete?.clientName}</p>
+          <p className="text-slate-600">Total: {invoiceToDelete?.currency} {invoiceToDelete?.totalAmount}</p>
+          <p className="text-red-700 font-medium mt-2">
+            Warning: This action deletes the invoice document from Cloud Firestore.
+          </p>
+        </div>
       </Modal>
     </div>
   );

@@ -38,12 +38,15 @@ import {
   subscribePayments,
   subscribeExpenses,
   subscribeTransactions,
+  deleteInvoice,
+  voidInvoice,
+  deleteExpense,
 } from '../../services/financeService';
 import { subscribeClients } from '../../services/clients/clientService';
 import { ClientProfile } from '../../types/client';
 
 export function FinancePage() {
-  const { currentUser, currentRole } = useAuth();
+  const { currentUser, currentRole, firebaseUser } = useAuth();
   const [activeTab, setActiveTab] = useState('invoices');
 
   // Firestore Live State
@@ -62,14 +65,14 @@ export function FinancePage() {
 
   // Create Invoice Form State
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [invoiceCurrency, setInvoiceCurrency] = useState<'USD' | 'BDT'>('USD');
+  const [invoiceCurrency, setInvoiceCurrency] = useState<'USD' | 'BDT'>('BDT');
   const [invoiceDueDate, setInvoiceDueDate] = useState('');
   const [invoiceTaxRate, setInvoiceTaxRate] = useState<number>(0);
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(0);
   const [invoiceNotes, setInvoiceNotes] = useState('');
   const [lineItems, setLineItems] = useState<
-    Array<{ description: string; quantity: number; unitPrice: number }>
-  >([{ description: 'Performance Marketing & Retainer', quantity: 1, unitPrice: 1500 }]);
+    Array<{ description: string; quantity: number; unitPrice: number; serviceCategory?: string }>
+  >([{ description: '', quantity: 1, unitPrice: 0 }]);
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false);
   const [invoiceFormError, setInvoiceFormError] = useState('');
 
@@ -83,14 +86,73 @@ export function FinancePage() {
   const [paymentError, setPaymentError] = useState('');
 
   // Record Expense Form State
-  const [expenseCategory, setExpenseCategory] = useState('Server & Tracking Infrastructure');
+  const [expenseCategory, setExpenseCategory] = useState('');
   const [expenseVendor, setExpenseVendor] = useState('');
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseAmount, setExpenseAmount] = useState<number>(0);
-  const [expenseCurrency, setExpenseCurrency] = useState<'USD' | 'BDT'>('USD');
+  const [expenseCurrency, setExpenseCurrency] = useState<'USD' | 'BDT'>('BDT');
   const [expenseDate, setExpenseDate] = useState('');
   const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const [expenseError, setExpenseError] = useState('');
+
+  // Delete & Void State
+  const [isDeleteInvoiceModalOpen, setIsDeleteInvoiceModalOpen] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const [isDeletingInvoice, setIsDeletingInvoice] = useState(false);
+
+  const [isDeleteExpenseModalOpen, setIsDeleteExpenseModalOpen] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+  const [isDeletingExpense, setIsDeletingExpense] = useState(false);
+
+  const handleDeleteInvoiceConfirm = async () => {
+    if (!invoiceToDelete || !currentUser) return;
+    try {
+      setIsDeletingInvoice(true);
+      await deleteInvoice(invoiceToDelete.id, invoiceToDelete.invoiceNumber, {
+        role: 'admin',
+        uid: firebaseUser?.uid || currentUser.id,
+        email: firebaseUser?.email || currentUser.email,
+      });
+      setIsDeleteInvoiceModalOpen(false);
+      setInvoiceToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete invoice');
+    } finally {
+      setIsDeletingInvoice(false);
+    }
+  };
+
+  const handleVoidInvoiceConfirm = async (inv: Invoice) => {
+    if (!currentUser) return;
+    if (!confirm(`Are you sure you want to void invoice ${inv.invoiceNumber}?`)) return;
+    try {
+      await voidInvoice(inv.id, inv.invoiceNumber, {
+        role: 'admin',
+        uid: firebaseUser?.uid || currentUser.id,
+        email: firebaseUser?.email || currentUser.email,
+      });
+    } catch (err: any) {
+      alert(err.message || 'Failed to void invoice');
+    }
+  };
+
+  const handleDeleteExpenseConfirm = async () => {
+    if (!expenseToDelete || !currentUser) return;
+    try {
+      setIsDeletingExpense(true);
+      await deleteExpense(expenseToDelete.id, expenseToDelete.category, {
+        role: 'admin',
+        uid: firebaseUser?.uid || currentUser.id,
+        email: firebaseUser?.email || currentUser.email,
+      });
+      setIsDeleteExpenseModalOpen(false);
+      setExpenseToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete expense');
+    } finally {
+      setIsDeletingExpense(false);
+    }
+  };
 
   // Subscribe to real-time data
   useEffect(() => {
@@ -226,17 +288,22 @@ export function FinancePage() {
           clientName: selectedClient.businessName,
           dueDate: invoiceDueDate,
           currency: invoiceCurrency,
-          items: lineItems,
-          taxRate: invoiceTaxRate,
-          discount: invoiceDiscount,
-          notes: invoiceNotes,
+          items: lineItems.map((item) => ({
+            description: item.description?.trim() || 'Service deliverable',
+            quantity: Number(item.quantity) || 1,
+            unitPrice: Number(item.unitPrice) || 0,
+            ...(item.serviceCategory ? { serviceCategory: item.serviceCategory } : {}),
+          })),
+          taxRate: Number(invoiceTaxRate) || 0,
+          discount: Number(invoiceDiscount) || 0,
+          notes: invoiceNotes?.trim() || '',
           status: 'issued',
         },
         {
-          uid: currentUser.id,
-          email: currentUser.email,
+          uid: firebaseUser?.uid || currentUser.id,
+          email: firebaseUser?.email || currentUser.email,
           role: 'admin',
-          name: currentUser.displayName,
+          name: firebaseUser?.displayName || currentUser.displayName,
         }
       );
 
@@ -247,7 +314,7 @@ export function FinancePage() {
       setInvoiceTaxRate(0);
       setInvoiceDiscount(0);
       setInvoiceNotes('');
-      setLineItems([{ description: 'Performance Marketing & Retainer', quantity: 1, unitPrice: 1500 }]);
+      setLineItems([{ description: '', quantity: 1, unitPrice: 0 }]);
     } catch (err: any) {
       setInvoiceFormError(err.message || 'Failed to create invoice.');
     } finally {
@@ -450,6 +517,30 @@ export function FinancePage() {
               Settled
             </span>
           )}
+
+          {inv.status !== 'voided' && inv.status !== 'paid' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleVoidInvoiceConfirm(inv)}
+              className="text-xs text-amber-600 hover:bg-amber-50"
+              title="Void Invoice"
+            >
+              Void
+            </Button>
+          )}
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setInvoiceToDelete(inv);
+              setIsDeleteInvoiceModalOpen(true);
+            }}
+            icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+            className="text-xs hover:bg-red-50"
+            title="Delete Invoice"
+          />
         </div>
       ),
     },
@@ -523,6 +614,23 @@ export function FinancePage() {
     {
       header: 'Date',
       cell: (exp) => <span className="text-xs text-slate-600">{exp.date}</span>,
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (exp) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setExpenseToDelete(exp);
+            setIsDeleteExpenseModalOpen(true);
+          }}
+          icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+          className="text-xs hover:bg-red-50"
+          title="Delete Expense"
+        />
+      ),
     },
   ];
 
@@ -763,7 +871,7 @@ export function FinancePage() {
         description="Line items automatically calculate subtotal, tax percentage, discount, and balance due."
         maxWidth="lg"
       >
-        <form onSubmit={handleCreateInvoiceSubmit} className="space-y-4">
+        <form onSubmit={handleCreateInvoiceSubmit} autoComplete="off" className="space-y-4">
           {invoiceFormError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -800,8 +908,8 @@ export function FinancePage() {
                 onChange={(e) => setInvoiceCurrency(e.target.value as 'USD' | 'BDT')}
                 className="w-full bg-white border border-slate-200 rounded-lg text-sm text-slate-900 py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
-                <option value="USD">USD ($ - United States Dollar)</option>
                 <option value="BDT">BDT (৳ - Bangladeshi Taka)</option>
+                <option value="USD">USD ($ - United States Dollar)</option>
               </select>
             </div>
           </div>
@@ -812,6 +920,7 @@ export function FinancePage() {
               label="Due Date"
               value={invoiceDueDate}
               onChange={(e) => setInvoiceDueDate(e.target.value)}
+              autoComplete="off"
               required
             />
             <Input
@@ -823,14 +932,16 @@ export function FinancePage() {
               value={invoiceTaxRate}
               onChange={(e) => setInvoiceTaxRate(parseFloat(e.target.value) || 0)}
               helperText="E.g. 5 for 5% VAT / Sales Tax"
+              autoComplete="off"
             />
             <Input
               type="number"
               min="0"
               step="1"
-              label="Discount ($)"
+              label={`Discount (${invoiceCurrency === 'BDT' ? '৳' : '$'})`}
               value={invoiceDiscount}
               onChange={(e) => setInvoiceDiscount(parseFloat(e.target.value) || 0)}
+              autoComplete="off"
             />
           </div>
 
@@ -846,7 +957,7 @@ export function FinancePage() {
                 onClick={() =>
                   setLineItems([
                     ...lineItems,
-                    { description: '', quantity: 1, unitPrice: 500 },
+                    { description: '', quantity: 1, unitPrice: 0 },
                   ])
                 }
               >
@@ -862,8 +973,9 @@ export function FinancePage() {
                     <div className="col-span-6">
                       <input
                         type="text"
-                        placeholder="Service description (e.g. Meta CAPI Setup)"
+                        placeholder="Service description"
                         value={item.description}
+                        autoComplete="off"
                         onChange={(e) => {
                           const updated = [...lineItems];
                           updated[index].description = e.target.value;
@@ -879,6 +991,7 @@ export function FinancePage() {
                         min="1"
                         placeholder="Qty"
                         value={item.quantity}
+                        autoComplete="off"
                         onChange={(e) => {
                           const updated = [...lineItems];
                           updated[index].quantity = parseInt(e.target.value) || 1;
@@ -895,6 +1008,7 @@ export function FinancePage() {
                         step="0.01"
                         placeholder="Price"
                         value={item.unitPrice}
+                        autoComplete="off"
                         onChange={(e) => {
                           const updated = [...lineItems];
                           updated[index].unitPrice = parseFloat(e.target.value) || 0;
@@ -905,7 +1019,7 @@ export function FinancePage() {
                       />
                     </div>
                     <div className="col-span-1 text-right text-xs font-semibold text-slate-700">
-                      ${rowAmount}
+                      {invoiceCurrency === 'BDT' ? '৳' : '$'}{rowAmount}
                     </div>
                     <div className="col-span-1 text-right">
                       {lineItems.length > 1 && (
@@ -1233,6 +1347,87 @@ export function FinancePage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Invoice Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteInvoiceModalOpen}
+        onClose={() => {
+          setIsDeleteInvoiceModalOpen(false);
+          setInvoiceToDelete(null);
+        }}
+        title="Permanently Delete Invoice"
+        description="Are you sure you want to permanently delete this invoice? This action cannot be undone."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteInvoiceModalOpen(false);
+                setInvoiceToDelete(null);
+              }}
+              disabled={isDeletingInvoice}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteInvoiceConfirm}
+              loading={isDeletingInvoice}
+            >
+              Permanently Delete Invoice
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{invoiceToDelete?.invoiceNumber} - {invoiceToDelete?.clientName}</p>
+          <p className="text-slate-600">Total: {invoiceToDelete?.currency} {invoiceToDelete?.totalAmount}</p>
+          <p className="text-red-700 font-medium mt-2">
+            Warning: This action deletes the invoice document from Cloud Firestore.
+          </p>
+        </div>
+      </Modal>
+
+      {/* Delete Expense Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteExpenseModalOpen}
+        onClose={() => {
+          setIsDeleteExpenseModalOpen(false);
+          setExpenseToDelete(null);
+        }}
+        title="Permanently Delete Expense Record"
+        description="Are you sure you want to permanently delete this operating expense?"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteExpenseModalOpen(false);
+                setExpenseToDelete(null);
+              }}
+              disabled={isDeletingExpense}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteExpenseConfirm}
+              loading={isDeletingExpense}
+            >
+              Delete Expense
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{expenseToDelete?.vendor} - {expenseToDelete?.category}</p>
+          <p className="text-slate-600">Amount: {expenseToDelete?.currency} {expenseToDelete?.amount}</p>
+        </div>
       </Modal>
     </div>
   );

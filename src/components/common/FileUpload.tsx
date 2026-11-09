@@ -46,7 +46,13 @@ export function FileUpload({
   allowedExtensions,
   className = '',
 }: FileUploadProps) {
-  const { currentUser, currentRole } = useAuth();
+  const {
+    currentUser,
+    currentRole,
+    firebaseUser,
+    isLiveAuth,
+    signInWithGoogle,
+  } = useAuth();
 
   // State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -174,6 +180,15 @@ export function FileUpload({
     if (!clientId) {
       setErrorMessage('Please select a target Client organization.');
       return;
+    }
+
+    if (!isLiveAuth || !firebaseUser) {
+      try {
+        await signInWithGoogle();
+      } catch {
+        setErrorMessage('Authentication required: Sign in with Google to upload files to Cloud Storage and Firestore.');
+        return;
+      }
     }
 
     setIsUploading(true);

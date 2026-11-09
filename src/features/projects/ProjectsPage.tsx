@@ -26,6 +26,7 @@ import {
   Clock,
   Info,
   AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Project, ProjectStatus, ProjectPriority } from '../../types/project';
@@ -34,6 +35,7 @@ import {
   subscribeProjects,
   createProject,
   updateProject,
+  deleteProject,
   archiveProject,
   restoreProject,
 } from '../../services/projects/projectService';
@@ -86,6 +88,25 @@ export function ProjectsPage() {
   const [formDeadline, setFormDeadline] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Delete Project State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
+
+  const handleDeleteProjectConfirm = async () => {
+    if (!projectToDelete) return;
+    try {
+      setIsDeletingProject(true);
+      await deleteProject(projectToDelete.id, projectToDelete.name, actor);
+      setIsDeleteModalOpen(false);
+      setProjectToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete project');
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
 
   useEffect(() => {
     if (!isLiveAuth || !firebaseUser) {
@@ -385,6 +406,21 @@ export function ProjectsPage() {
           >
             {row.status === 'archived' ? 'Restore' : 'Archive'}
           </Button>
+          {actor.role === 'admin' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setProjectToDelete(row);
+                setIsDeleteModalOpen(true);
+              }}
+              icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+              className="text-xs h-7 px-2 text-red-600 hover:bg-red-50"
+              title="Delete Project"
+            >
+              Delete
+            </Button>
+          )}
         </div>
       ),
     },
@@ -788,6 +824,48 @@ export function ProjectsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Delete Project Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setProjectToDelete(null);
+        }}
+        title="Permanently Delete Project"
+        description="Are you sure you want to permanently delete this project? This action cannot be undone."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setProjectToDelete(null);
+              }}
+              disabled={isDeletingProject}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteProjectConfirm}
+              loading={isDeletingProject}
+            >
+              Permanently Delete Project
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{projectToDelete?.name}</p>
+          <p className="text-slate-600">Client: {projectToDelete?.clientName}</p>
+          <p className="text-red-700 font-medium mt-2">
+            Warning: This action deletes the project document from Cloud Firestore.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

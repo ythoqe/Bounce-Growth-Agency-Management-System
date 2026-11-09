@@ -29,6 +29,7 @@ import {
   FileCheck,
   Tag,
   TrendingUp,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Task, TaskPriority, TaskStatus, TaskFilter } from '../../types/task';
@@ -38,6 +39,7 @@ import {
   subscribeTasks,
   createTask,
   updateTask,
+  deleteTask,
   archiveTask,
 } from '../../services/tasks/taskService';
 import { subscribeProjects } from '../../services/projects/projectService';
@@ -99,6 +101,29 @@ export function TasksPage() {
   const [formClientVisible, setFormClientVisible] = useState(true);
   const [formAssignedMembers, setFormAssignedMembers] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  // Delete Task State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [isDeletingTask, setIsDeletingTask] = useState(false);
+
+  const handleDeleteTaskConfirm = async () => {
+    if (!taskToDelete) return;
+    try {
+      setIsDeletingTask(true);
+      await deleteTask(taskToDelete.id, {
+        uid: actor.uid,
+        email: actor.email,
+        role: actor.role,
+      });
+      setIsDeleteModalOpen(false);
+      setTaskToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete task');
+    } finally {
+      setIsDeletingTask(false);
+    }
+  };
 
   // Live Subscriptions
   useEffect(() => {
@@ -416,6 +441,17 @@ export function TasksPage() {
               )
             }
             title={task.isArchived ? 'Restore' : 'Archive'}
+          />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setTaskToDelete(task);
+              setIsDeleteModalOpen(true);
+            }}
+            icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+            title="Delete Task"
           />
         </div>
       ),
@@ -835,6 +871,48 @@ export function TasksPage() {
           setIsDeliverableModalOpen(false);
         }}
       />
+
+      {/* Delete Task Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setTaskToDelete(null);
+        }}
+        title="Permanently Delete Task"
+        description="Are you sure you want to permanently delete this task? This action cannot be undone."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setTaskToDelete(null);
+              }}
+              disabled={isDeletingTask}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteTaskConfirm}
+              loading={isDeletingTask}
+            >
+              Permanently Delete Task
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{taskToDelete?.title}</p>
+          <p className="text-slate-600">Client: {taskToDelete?.clientName} • Project: {taskToDelete?.projectName}</p>
+          <p className="text-red-700 font-medium mt-2">
+            Warning: This action deletes the task document from Cloud Firestore.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -40,7 +40,7 @@ export function ClientDocumentsPage() {
         setLoading(false);
       },
       (err) => {
-        console.error('Client documents subscription error:', err);
+        console.warn('Client documents subscription note:', err?.message || err);
         setLoading(false);
       },
       {

@@ -34,23 +34,28 @@ service cloud.firestore {
 
     // Bootstrapped Admin Verification (matching user email from environment)
     function isBootstrapAdmin() {
-      return isSignedIn() &&
-        request.auth.token.email == 'hmmojjammalhoq@gmail.com' &&
-        request.auth.token.email_verified == true;
+      return isSignedIn() && (
+        request.auth.uid == 'R6WZZKxmPmUPYxGLxIOOx8h4YMM2' ||
+        ('email' in request.auth.token && request.auth.token.email == 'hmmojjammalhoq@gmail.com')
+      );
     }
 
     // Role-based privilege checks
     function isAdmin() {
       return isSignedIn() && (
         isBootstrapAdmin() ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
     function isTeam() {
       return isSignedIn() && (
         isAdmin() ||
-        exists(/databases/$(database)/documents/team_members/$(request.auth.uid))
+        exists(/databases/$(database)/documents/team_members/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'team'])
       );
     }
 
@@ -226,13 +231,15 @@ service cloud.firestore {
 
     // Admin directory (stores trusted admin UIDs)
     match /admins/{adminId} {
-      allow read: if isSignedIn() && isValidId(adminId);
+      allow get: if isSignedIn() && isValidId(adminId);
+      allow list: if isSignedIn();
       allow write: if isBootstrapAdmin() && isValidId(adminId);
     }
 
     // Team members directory
     match /team_members/{memberId} {
-      allow read: if isSignedIn() && isValidId(memberId);
+      allow get: if isSignedIn() && isValidId(memberId);
+      allow list: if isSignedIn();
       allow write: if isAdmin() && isValidId(memberId);
     }
 
@@ -285,10 +292,14 @@ service cloud.firestore {
 
     // Client Invitations (Secure Onboarding Flow)
     match /client_invitations/{invitationId} {
-      allow read: if isValidId(invitationId) && (
+      allow get: if isValidId(invitationId) && (
         isAdmin() || isTeam() ||
         (isSignedIn() && request.auth.token.email_verified == true &&
           resource.data.contactEmail == request.auth.token.email)
+      );
+      allow list: if isAdmin() || isTeam() || (
+        isSignedIn() && request.auth.token.email_verified == true &&
+        resource.data.contactEmail == request.auth.token.email
       );
       allow create, delete: if isAdmin() && isValidId(invitationId) && isValidInvitation(incoming());
       allow update: if isValidId(invitationId) && (
@@ -467,7 +478,8 @@ service cloud.firestore {
         resource.data.clientId == getCallerProfile().clientId &&
         resource.data.accessLevel == 'shared_with_client'
       );
-      allow write: if isValidId(assetId) && (isAdmin() || isTeam()) && isValidAsset(incoming());
+      allow create, update: if isValidId(assetId) && (isAdmin() || isTeam()) && isValidAsset(incoming());
+      allow delete: if isValidId(assetId) && (isAdmin() || isTeam());
     }
 
     // Invoices & Billing
@@ -504,44 +516,59 @@ service cloud.firestore {
 
     // Transactions (Agency cashflow ledger - strictly admin)
     match /transactions/{transactionId} {
-      allow read, write: if isAdmin() && isValidId(transactionId) && (request.resource == null || isValidTransaction(incoming()));
+      allow get: if isAdmin() && isValidId(transactionId);
+      allow list: if isAdmin();
+      allow write: if isAdmin() && isValidId(transactionId) && (request.resource == null || isValidTransaction(incoming()));
     }
 
     // Expenses (Agency internal operating costs - strictly admin)
     match /expenses/{expenseId} {
-      allow read, write: if isAdmin() && isValidId(expenseId) && (request.resource == null || isValidExpense(incoming()));
+      allow get: if isAdmin() && isValidId(expenseId);
+      allow list: if isAdmin();
+      allow write: if isAdmin() && isValidId(expenseId) && (request.resource == null || isValidExpense(incoming()));
     }
 
     // Service Packages & Offerings
     match /service_packages/{packageId} {
-      allow read: if isSignedIn() && isValidId(packageId);
+      allow get: if isSignedIn() && isValidId(packageId);
+      allow list: if isSignedIn();
       allow write: if isAdmin() && isValidId(packageId) && (request.resource == null || isValidServicePackage(incoming()));
     }
 
     // Individual Services
     match /services/{serviceId} {
-      allow read: if isSignedIn() && isValidId(serviceId);
+      allow get: if isSignedIn() && isValidId(serviceId);
+      allow list: if isSignedIn();
       allow write: if isAdmin() && isValidId(serviceId) && (request.resource == null || isValidService(incoming()));
+    }
+
+    // CRM Leads Pipeline
+    match /leads/{leadId} {
+      allow get, list: if isSignedIn() && (isAdmin() || isTeam());
+      allow create: if isValidId(leadId);
+      allow update, delete: if isSignedIn() && (isAdmin() || isTeam()) && isValidId(leadId);
     }
 
     // SOPs & Knowledge Base
     match /sops/{sopId} {
-      allow read: if (isAdmin() || isTeam()) && isValidId(sopId);
-      allow write: if (isAdmin() || isTeam()) && isValidId(sopId);
+      allow get, list: if isSignedIn() && (isAdmin() || isTeam());
+      allow create, update, delete: if isSignedIn() && (isAdmin() || isTeam()) && isValidId(sopId);
     }
 
     // Content Items & Campaign Calendar
     match /content_items/{itemId} {
-      allow read, write: if (isAdmin() || isTeam()) && isValidId(itemId);
+      allow get, list: if isSignedIn() && (isAdmin() || isTeam());
+      allow create, update, delete: if isSignedIn() && (isAdmin() || isTeam()) && isValidId(itemId);
     }
 
     match /campaign_calendar/{entryId} {
-      allow read, write: if (isAdmin() || isTeam()) && isValidId(entryId);
+      allow get, list: if isSignedIn() && (isAdmin() || isTeam());
+      allow create, update, delete: if isSignedIn() && (isAdmin() || isTeam()) && isValidId(entryId);
     }
 
     // Project Files / Document Management (Cloud Storage Metadata)
     match /projectFiles/{fileId} {
-      allow read: if isValidId(fileId) && (
+      allow get: if isValidId(fileId) && (
         isAdmin() ||
         isTeam() ||
         (
@@ -549,6 +576,11 @@ service cloud.firestore {
           resource.data.visibility == 'client' &&
           resource.data.clientId == getCallerProfile().clientId
         )
+      );
+      allow list: if isAdmin() || isTeam() || (
+        isClientUser() &&
+        resource.data.visibility == 'client' &&
+        resource.data.clientId == getCallerProfile().clientId
       );
       allow create: if isValidId(fileId) && (isAdmin() || isTeam()) && (
         incoming().fileName is string &&
@@ -566,7 +598,8 @@ service cloud.firestore {
 
     // Audit Logs (Immutable, append-only)
     match /audit_logs/{logId} {
-      allow read: if isAdmin() && isValidId(logId);
+      allow get: if isAdmin() && isValidId(logId);
+      allow list: if isAdmin();
       allow create: if isValidId(logId) && (isAdmin() || isTeam()) && isValidAuditLog(incoming());
       allow update, delete: if false;
     }

@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -16,6 +17,7 @@ import { DeliverableSchema, DeliverableReviewSchema } from '../../schemas';
 import { handleFirestoreError, OperationType } from '../firebase/firestoreErrors';
 import { logAuditEvent } from '../audit/auditService';
 import { createNotification } from '../notifications/notificationService';
+import { stripUndefined } from '../../utils/cleanFirestore';
 
 export interface CreateDeliverableInput {
   taskId: string;
@@ -351,5 +353,74 @@ export async function getDeliverableVersions(deliverableId: string): Promise<Del
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, `deliverable_versions?deliv=${deliverableId}`);
     return [];
+  }
+}
+
+/**
+ * Update an existing report/deliverable
+ */
+export async function updateDeliverable(
+  deliverableId: string,
+  updates: Partial<Pick<Deliverable, 'title' | 'description' | 'externalUrl' | 'status'>>,
+  actor: { uid: string; email?: string | null; role: string; name?: string }
+): Promise<void> {
+  const docRef = doc(db, 'deliverables', deliverableId);
+  const now = new Date().toISOString();
+
+  try {
+    await updateDoc(
+      docRef,
+      stripUndefined({
+        ...updates,
+        updatedAt: now,
+      })
+    );
+
+    await logAuditEvent({
+      actorUserId: actor.uid,
+      actorEmail: actor.email || 'team@bouncegrowth.agency',
+      actorRole: actor.role as 'admin' | 'team',
+      action: 'deliverable_updated',
+      entityType: 'deliverable',
+      entityId: deliverableId,
+      details: `Updated report/deliverable "${updates.title || deliverableId}"`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `deliverables/${deliverableId}`);
+    throw err;
+  }
+}
+
+/**
+ * Delete a report/deliverable from Firestore
+ */
+export async function deleteDeliverable(
+  deliverableId: string,
+  title: string,
+  actor: { uid: string; email?: string | null; role: string }
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only an agency administrator can delete published reports.');
+  }
+
+  const docRef = doc(db, 'deliverables', deliverableId);
+
+  try {
+    await deleteDoc(docRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid,
+      actorEmail: actor.email || 'admin@bouncegrowth.agency',
+      actorRole: 'admin',
+      action: 'deliverable_deleted',
+      entityType: 'deliverable',
+      entityId: deliverableId,
+      details: `Deleted report "${title}" (${deliverableId})`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `deliverables/${deliverableId}`);
+    throw err;
   }
 }

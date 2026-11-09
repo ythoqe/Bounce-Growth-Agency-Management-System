@@ -8,6 +8,7 @@ import {
   query,
   where,
   Unsubscribe,
+  Query,
 } from 'firebase/firestore';
 import {
   ref,
@@ -15,9 +16,10 @@ import {
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
-import { db, storage } from '../firebase/client';
+import { db, storage, auth } from '../firebase/client';
 import { ProjectFile, UploadFileMetadata, FileVisibility } from '../../types/document';
 import { logAuditEvent } from '../audit/auditService';
+import { stripUndefined } from '../../utils/cleanFirestore';
 
 export const COLLECTION_NAME = 'projectFiles';
 
@@ -207,7 +209,7 @@ export async function uploadProjectFile(
     updatedAt: now,
   };
 
-  await setDoc(doc(db, COLLECTION_NAME, fileId), projectFile);
+  await setDoc(doc(db, COLLECTION_NAME, fileId), stripUndefined(projectFile));
 
   // 3. Log audit event
   if (actor?.uid && actor?.role && actor.role !== 'client') {
@@ -235,34 +237,33 @@ export function subscribeProjectFiles(
     clientId?: string;
     clientVisibleOnly?: boolean;
     projectId?: string;
+    actorRole?: string;
+    actorUid?: string;
   }
 ): Unsubscribe {
-  const colRef = collection(db, COLLECTION_NAME);
+  // If unauthenticated, return empty list gracefully without triggering Firestore permission errors
+  if (!auth?.currentUser) {
+    callback([]);
+    return () => {};
+  }
+
+  // Construct query satisfying Firestore security rules for client users and scoping
+  let targetQuery: Query = collection(db, COLLECTION_NAME);
+  if (options?.clientVisibleOnly && options?.clientId) {
+    targetQuery = query(
+      collection(db, COLLECTION_NAME),
+      where('visibility', '==', 'client'),
+      where('clientId', '==', options.clientId)
+    );
+  } else if (options?.clientId) {
+    targetQuery = query(collection(db, COLLECTION_NAME), where('clientId', '==', options.clientId));
+  } else if (options?.projectId) {
+    targetQuery = query(collection(db, COLLECTION_NAME), where('projectId', '==', options.projectId));
+  }
 
   return onSnapshot(
-    colRef,
-    async (snapshot) => {
-      // Auto-seed sample files if empty
-      if (snapshot.empty && !isSeeding && !options?.clientId && !options?.projectId) {
-        isSeeding = true;
-        try {
-          console.log('[FileService] Auto-seeding initial project files...');
-          for (let i = 0; i < INITIAL_PROJECT_FILES.length; i++) {
-            const seed = INITIAL_PROJECT_FILES[i];
-            const docId = `file_seed_${i + 1}`;
-            await setDoc(doc(db, COLLECTION_NAME, docId), {
-              id: docId,
-              ...seed,
-            });
-          }
-        } catch (seedErr) {
-          console.warn('[FileService] Auto-seed failed (may lack permissions):', seedErr);
-        } finally {
-          isSeeding = false;
-        }
-        return;
-      }
-
+    targetQuery,
+    (snapshot) => {
       let files: ProjectFile[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -309,7 +310,8 @@ export function subscribeProjectFiles(
       callback(files);
     },
     (error) => {
-      console.error('[FileService] Snapshot error:', error);
+      console.warn('[FileService] Snapshot subscription note:', error?.message || error);
+      callback([]);
       if (onError) onError(error);
     }
   );

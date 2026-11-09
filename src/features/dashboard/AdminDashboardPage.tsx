@@ -32,6 +32,7 @@ import {
   Clock,
   ChevronRight,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
@@ -60,6 +61,7 @@ import {
   LeadConversionStatusData,
 } from '../../services/dashboard/dashboardAnalyticsService';
 import { formatCurrency } from '../../utils/formatters';
+import { purgeAllDemoData } from '../../services/admin/cleanupDemoData';
 
 export function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -74,10 +76,12 @@ export function AdminDashboardPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Demo Data Purge State
+  const [isPurgingDemo, setIsPurgingDemo] = useState(false);
+  const [purgeAlert, setPurgeAlert] = useState<string | null>(null);
+
   // Subscriptions
   useEffect(() => {
-    // 1. Trigger initial seed if Firestore finance collections are blank
-    autoSeedInitialFinanceAndLeadsIfEmpty();
 
     const actor = {
       id: currentUser?.id || 'usr_admin_bounce',
@@ -172,16 +176,16 @@ export function AdminDashboardPage() {
           <p className="font-bold text-slate-300 border-b border-slate-800 pb-1">{label}</p>
           <div className="flex justify-between items-center text-emerald-400">
             <span>Revenue (Cash):</span>
-            <span className="font-mono font-semibold">${rev.toLocaleString()}</span>
+            <span className="font-mono font-semibold">৳{rev.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center text-rose-400">
             <span>Total Expenses:</span>
-            <span className="font-mono font-semibold">${exp.toLocaleString()}</span>
+            <span className="font-mono font-semibold">৳{exp.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center pt-1 border-t border-slate-800 font-bold">
             <span className={profit >= 0 ? 'text-emerald-300' : 'text-rose-300'}>Net Profit:</span>
             <span className={`font-mono ${profit >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {profit >= 0 ? `+$${profit.toLocaleString()}` : `-$${Math.abs(profit).toLocaleString()}`}
+              {profit >= 0 ? `+৳${profit.toLocaleString()}` : `-৳${Math.abs(profit).toLocaleString()}`}
             </span>
           </div>
         </div>
@@ -204,6 +208,21 @@ export function AdminDashboardPage() {
       );
     }
     return null;
+  };
+
+  const handlePurgeDemoData = async () => {
+    if (isPurgingDemo) return;
+    setIsPurgingDemo(true);
+    setPurgeAlert(null);
+    try {
+      const res = await purgeAllDemoData();
+      setPurgeAlert(res.message);
+      setTimeout(() => setPurgeAlert(null), 5000);
+    } catch (err: any) {
+      setPurgeAlert(`Purge failed: ${err.message}`);
+    } finally {
+      setIsPurgingDemo(false);
+    }
   };
 
   return (
@@ -246,11 +265,32 @@ export function AdminDashboardPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePurgeDemoData}
+            disabled={isPurgingDemo}
+            className="text-xs h-7 text-rose-700 border-rose-200 hover:bg-rose-50"
+          >
+            {isPurgingDemo ? 'Purging Demo Data...' : 'Purge All Demo Data'}
+          </Button>
           <span className="font-mono text-emerald-800 font-semibold bg-white/80 px-2 py-0.5 rounded border border-emerald-200">
             Project: {firebaseStatus.projectId}
           </span>
         </div>
       </div>
+
+      {purgeAlert && (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>{purgeAlert}</span>
+          </div>
+          <button onClick={() => setPurgeAlert(null)} className="text-blue-600 hover:text-blue-800">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* --------------------------------------------------------------------- */}
       {/* 1. MANDATORY FINANCIAL KPI SECTION                                   */}
@@ -258,8 +298,8 @@ export function AdminDashboardPage() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-emerald-600" />
-            Financial Key Performance Indicators (Firestore Live)
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+            Financial Key Performance Indicators (BDT ৳ Live)
           </h2>
           <span className="text-xs text-slate-500 font-mono">
             Collection Rate: <strong className="text-slate-900">{kpis.collectionRate}%</strong>
@@ -277,7 +317,7 @@ export function AdminDashboardPage() {
             </div>
             <div className="mt-3">
               <div className="text-2xl font-black tracking-tight text-slate-900 font-mono">
-                ${kpis.totalRevenue.toLocaleString()}
+                ৳{kpis.totalRevenue.toLocaleString()}
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold mt-1">
                 <TrendingUp className="w-3.5 h-3.5" />
@@ -296,7 +336,7 @@ export function AdminDashboardPage() {
             </div>
             <div className="mt-3">
               <div className="text-2xl font-black tracking-tight text-slate-900 font-mono">
-                ${kpis.totalReceivables.toLocaleString()}
+                ৳{kpis.totalReceivables.toLocaleString()}
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-blue-700 font-medium mt-1">
                 <Clock className="w-3.5 h-3.5 text-blue-500" />
@@ -315,7 +355,7 @@ export function AdminDashboardPage() {
             </div>
             <div className="mt-3">
               <div className="text-2xl font-black tracking-tight text-slate-900 font-mono">
-                ${kpis.totalExpenses.toLocaleString()}
+                ৳{kpis.totalExpenses.toLocaleString()}
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
                 {expenses.length} tracked vendor & tool costs
@@ -346,8 +386,8 @@ export function AdminDashboardPage() {
                 }`}
               >
                 {kpis.netProfit >= 0
-                  ? `$${kpis.netProfit.toLocaleString()}`
-                  : `-$${Math.abs(kpis.netProfit).toLocaleString()}`}
+                  ? `৳${kpis.netProfit.toLocaleString()}`
+                  : `-৳${Math.abs(kpis.netProfit).toLocaleString()}`}
               </div>
               <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 mt-1">
                 <span className="font-mono text-teal-700">{kpis.profitMargin}%</span>
@@ -410,7 +450,7 @@ export function AdminDashboardPage() {
                     fontSize={11}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
+                    tickFormatter={(val) => `৳${(val / 1000).toFixed(0)}k`}
                   />
                   <Tooltip content={<CustomBarTooltip />} />
                   <Legend
@@ -441,19 +481,19 @@ export function AdminDashboardPage() {
             <div>
               <p className="text-[11px] text-slate-400">Avg Monthly Cash</p>
               <p className="font-bold text-slate-800 font-mono mt-0.5">
-                ${Math.round(kpis.totalRevenue / 6).toLocaleString()}
+                ৳{Math.round(kpis.totalRevenue / 6).toLocaleString()}
               </p>
             </div>
             <div>
               <p className="text-[11px] text-slate-400">Avg Monthly Expenses</p>
               <p className="font-bold text-slate-800 font-mono mt-0.5">
-                ${Math.round(kpis.totalExpenses / 6).toLocaleString()}
+                ৳{Math.round(kpis.totalExpenses / 6).toLocaleString()}
               </p>
             </div>
             <div>
               <p className="text-[11px] text-slate-400">6-Month Net Run-Rate</p>
               <p className="font-bold text-emerald-600 font-mono mt-0.5">
-                +${kpis.netProfit.toLocaleString()}
+                +৳{kpis.netProfit.toLocaleString()}
               </p>
             </div>
           </div>

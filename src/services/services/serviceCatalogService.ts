@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   onSnapshot,
   writeBatch,
@@ -15,6 +16,7 @@ import { db, auth } from '../firebase/client';
 import { ServicePackage, AgencyServiceItem, ServiceBillingType } from '../../types/service';
 import { handleFirestoreError, OperationType } from '../firebase/firestoreErrors';
 import { logAuditEvent } from '../audit/auditService';
+import { stripUndefined } from '../../utils/cleanFirestore';
 
 const PACKAGES_COLLECTION = 'service_packages';
 const SERVICES_COLLECTION = 'services';
@@ -141,31 +143,7 @@ export function subscribePackages(
 
   return onSnapshot(
     q,
-    async (snapshot) => {
-      // Auto-seed if collection is empty
-      if (snapshot.empty) {
-        try {
-          const batch = writeBatch(db);
-          const now = new Date().toISOString();
-
-          DEFAULT_AGENCY_PACKAGES.forEach((pkg, index) => {
-            const pkgId = `pkg_${Date.now()}_${index + 1}`;
-            const pkgRef = doc(db, PACKAGES_COLLECTION, pkgId);
-            batch.set(pkgRef, {
-              id: pkgId,
-              ...pkg,
-              createdAt: now,
-              updatedAt: now,
-            });
-          });
-
-          await batch.commit();
-        } catch (seedErr) {
-          console.warn('[Seed service packages warning]', seedErr);
-        }
-        return;
-      }
-
+    (snapshot) => {
       const items = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...docSnap.data(),
@@ -203,31 +181,7 @@ export function subscribeServices(
 
   return onSnapshot(
     q,
-    async (snapshot) => {
-      // Auto-seed default individual services if empty
-      if (snapshot.empty) {
-        try {
-          const batch = writeBatch(db);
-          const now = new Date().toISOString();
-
-          DEFAULT_INDIVIDUAL_SERVICES.forEach((srv, index) => {
-            const srvId = `srv_${Date.now()}_${index + 1}`;
-            const srvRef = doc(db, SERVICES_COLLECTION, srvId);
-            batch.set(srvRef, {
-              id: srvId,
-              ...srv,
-              createdAt: now,
-              updatedAt: now,
-            });
-          });
-
-          await batch.commit();
-        } catch (seedErr) {
-          console.warn('[Seed individual services warning]', seedErr);
-        }
-        return;
-      }
-
+    (snapshot) => {
       const items = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...docSnap.data(),
@@ -476,6 +430,196 @@ export async function createServicePackage(
     return newPackage;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `${PACKAGES_COLLECTION}/${pkgId}`);
+    throw err;
+  }
+}
+
+/**
+ * Update an existing Service Package
+ */
+export async function updateServicePackage(
+  packageId: string,
+  updates: Partial<Omit<ServicePackage, 'id' | 'createdAt' | 'updatedAt' | 'linkedProjectIds'>>,
+  actor: { uid?: string; id?: string; email?: string | null; role: string }
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can update service packages.');
+  }
+
+  const pkgRef = doc(db, PACKAGES_COLLECTION, packageId);
+  const now = new Date().toISOString();
+
+  try {
+    await updateDoc(
+      pkgRef,
+      stripUndefined({
+        ...updates,
+        updatedAt: now,
+      })
+    );
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.com',
+      actorRole: 'admin',
+      action: 'package_updated',
+      entityType: 'service_package',
+      entityId: packageId,
+      details: `Updated service package "${updates.name || packageId}"`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${PACKAGES_COLLECTION}/${packageId}`);
+    throw err;
+  }
+}
+
+/**
+ * Delete a Service Package
+ */
+export async function deleteServicePackage(
+  packageId: string,
+  packageName: string,
+  actor: { uid?: string; id?: string; email?: string | null; role: string }
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can delete service packages.');
+  }
+
+  const pkgRef = doc(db, PACKAGES_COLLECTION, packageId);
+
+  try {
+    await deleteDoc(pkgRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.com',
+      actorRole: 'admin',
+      action: 'package_deleted',
+      entityType: 'service_package',
+      entityId: packageId,
+      details: `Deleted service package "${packageName}" (${packageId})`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${PACKAGES_COLLECTION}/${packageId}`);
+    throw err;
+  }
+}
+
+/**
+ * Create a new Individual Agency Service
+ */
+export async function createAgencyService(
+  input: Omit<AgencyServiceItem, 'id' | 'createdAt' | 'updatedAt' | 'linkedProjectIds'>,
+  actor: { uid?: string; id?: string; email?: string | null; role: string }
+): Promise<AgencyServiceItem> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can create services.');
+  }
+
+  const srvId = `srv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const srvRef = doc(db, SERVICES_COLLECTION, srvId);
+  const now = new Date().toISOString();
+
+  const newService: AgencyServiceItem = {
+    id: srvId,
+    ...input,
+    linkedProjectIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await setDoc(srvRef, stripUndefined(newService));
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.com',
+      actorRole: 'admin',
+      action: 'service_created',
+      entityType: 'agency_service',
+      entityId: srvId,
+      details: `Created service item "${newService.name}" (${newService.priceRange})`,
+      status: 'success',
+    });
+
+    return newService;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${SERVICES_COLLECTION}/${srvId}`);
+    throw err;
+  }
+}
+
+/**
+ * Update an Individual Agency Service
+ */
+export async function updateAgencyService(
+  serviceId: string,
+  updates: Partial<Omit<AgencyServiceItem, 'id' | 'createdAt' | 'updatedAt'>>,
+  actor: { uid?: string; id?: string; email?: string | null; role: string }
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can update services.');
+  }
+
+  const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
+  const now = new Date().toISOString();
+
+  try {
+    await updateDoc(
+      srvRef,
+      stripUndefined({
+        ...updates,
+        updatedAt: now,
+      })
+    );
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.com',
+      actorRole: 'admin',
+      action: 'service_updated',
+      entityType: 'agency_service',
+      entityId: serviceId,
+      details: `Updated service "${updates.name || serviceId}"`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${SERVICES_COLLECTION}/${serviceId}`);
+    throw err;
+  }
+}
+
+/**
+ * Delete an Individual Agency Service
+ */
+export async function deleteAgencyService(
+  serviceId: string,
+  serviceName: string,
+  actor: { uid?: string; id?: string; email?: string | null; role: string }
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can delete services.');
+  }
+
+  const srvRef = doc(db, SERVICES_COLLECTION, serviceId);
+
+  try {
+    await deleteDoc(srvRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.com',
+      actorRole: 'admin',
+      action: 'service_deleted',
+      entityType: 'agency_service',
+      entityId: serviceId,
+      details: `Deleted service "${serviceName}" (${serviceId})`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${SERVICES_COLLECTION}/${serviceId}`);
     throw err;
   }
 }

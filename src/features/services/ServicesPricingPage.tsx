@@ -10,13 +10,10 @@ import {
   Briefcase,
   AlertCircle,
   CheckCircle2,
-  Building2,
-  Calendar,
   X,
-  Layers,
   Sparkles,
-  DollarSign,
-  TrendingUp,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
@@ -36,6 +33,11 @@ import {
   linkPackageToProject,
   unlinkPackageFromProject,
   createServicePackage,
+  updateServicePackage,
+  deleteServicePackage,
+  createAgencyService,
+  updateAgencyService,
+  deleteAgencyService,
 } from '../../services/services/serviceCatalogService';
 import { subscribeProjects } from '../../services/projects/projectService';
 
@@ -49,24 +51,61 @@ export function ServicesPricingPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modals state
+  // Link Package to Project Modal State
   const [selectedPackageForLink, setSelectedPackageForLink] = useState<ServicePackage | null>(null);
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [selectedProjectIdToLink, setSelectedProjectIdToLink] = useState('');
   const [linkingSubmitting, setLinkingSubmitting] = useState(false);
 
+  // Create Package Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newPkgName, setNewPkgName] = useState('');
-  const [newPkgCategory, setNewPkgCategory] = useState('Paid Media & Tracking');
-  const [newPkgMinPrice, setNewPkgMinPrice] = useState<number>(10000);
-  const [newPkgMaxPrice, setNewPkgMaxPrice] = useState<number>(15000);
+  const [newPkgCategory, setNewPkgCategory] = useState('Paid Media & Scaling');
+  const [newPkgMinPrice, setNewPkgMinPrice] = useState<number>(0);
+  const [newPkgMaxPrice, setNewPkgMaxPrice] = useState<number>(0);
   const [newPkgBilling, setNewPkgBilling] = useState<ServiceBillingType>('monthly_retainer');
   const [newPkgDescription, setNewPkgDescription] = useState('');
-  const [newPkgFeatures, setNewPkgFeatures] = useState<string[]>([
-    'Custom Conversion Tracking Configuration',
-    'Meta CAPI & Server-Side Deduplication',
-  ]);
+  const [newPkgFeatures, setNewPkgFeatures] = useState<string[]>(['']);
   const [createSubmitting, setCreateSubmitting] = useState(false);
+
+  // Edit Package Modal State
+  const [editingPackage, setEditingPackage] = useState<ServicePackage | null>(null);
+  const [isEditPackageModalOpen, setIsEditPackageModalOpen] = useState(false);
+  const [editPkgName, setEditPkgName] = useState('');
+  const [editPkgCategory, setEditPkgCategory] = useState('');
+  const [editPkgMinPrice, setEditPkgMinPrice] = useState<number>(0);
+  const [editPkgMaxPrice, setEditPkgMaxPrice] = useState<number>(0);
+  const [editPkgBilling, setEditPkgBilling] = useState<ServiceBillingType>('monthly_retainer');
+  const [editPkgDescription, setEditPkgDescription] = useState('');
+  const [editPkgFeatures, setEditPkgFeatures] = useState<string[]>([]);
+  const [editPackageSubmitting, setEditPackageSubmitting] = useState(false);
+
+  // Delete Package Modal State
+  const [deletingPackage, setDeletingPackage] = useState<ServicePackage | null>(null);
+  const [isDeletePackageModalOpen, setIsDeletePackageModalOpen] = useState(false);
+  const [deletePackageSubmitting, setDeletePackageSubmitting] = useState(false);
+
+  // Create Individual Service Modal State
+  const [isCreateServiceModalOpen, setIsCreateServiceModalOpen] = useState(false);
+  const [newSrvName, setNewSrvName] = useState('');
+  const [newSrvCategory, setNewSrvCategory] = useState('Tracking & Infrastructure');
+  const [newSrvPriceRange, setNewSrvPriceRange] = useState('');
+  const [newSrvDescription, setNewSrvDescription] = useState('');
+  const [createServiceSubmitting, setCreateServiceSubmitting] = useState(false);
+
+  // Edit Individual Service Modal State
+  const [editingService, setEditingService] = useState<AgencyServiceItem | null>(null);
+  const [isEditServiceModalOpen, setIsEditServiceModalOpen] = useState(false);
+  const [editSrvName, setEditSrvName] = useState('');
+  const [editSrvCategory, setEditSrvCategory] = useState('');
+  const [editSrvPriceRange, setEditSrvPriceRange] = useState('');
+  const [editSrvDescription, setEditSrvDescription] = useState('');
+  const [editServiceSubmitting, setEditServiceSubmitting] = useState(false);
+
+  // Delete Individual Service Modal State
+  const [deletingService, setDeletingService] = useState<AgencyServiceItem | null>(null);
+  const [isDeleteServiceModalOpen, setIsDeleteServiceModalOpen] = useState(false);
+  const [deleteServiceSubmitting, setDeleteServiceSubmitting] = useState(false);
 
   // Status feedback
   const [serverError, setServerError] = useState<string | null>(null);
@@ -163,6 +202,7 @@ export function ServicesPricingPage() {
         `Successfully linked package "${selectedPackageForLink.name}" to project "${proj?.name || selectedProjectIdToLink}".`
       );
       setSelectedProjectIdToLink('');
+      setIsLinkModalOpen(false);
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
       setServerError(err.message || 'Failed to link package to project.');
@@ -185,13 +225,13 @@ export function ServicesPricingPage() {
   };
 
   // ---------------------------------------------------------------------------
-  // Handlers: Create Package
+  // Handlers: Package CRUD
   // ---------------------------------------------------------------------------
   const handleCreatePackageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
 
-    if (!newPkgName.trim() || newPkgMinPrice <= 0 || newPkgMaxPrice < newPkgMinPrice) {
+    if (!newPkgName.trim() || newPkgMinPrice < 0 || newPkgMaxPrice < newPkgMinPrice) {
       setServerError('Please provide a valid package name and price range.');
       return;
     }
@@ -211,7 +251,7 @@ export function ServicesPricingPage() {
           currency: 'BDT',
           billingType: newPkgBilling,
           category: newPkgCategory.trim(),
-          features: newPkgFeatures.filter((f) => f.trim().length > 0),
+          features: newPkgFeatures.map((f) => f.trim()).filter((f) => f.length > 0),
           isActive: true,
           sortOrder: packages.length + 1,
         },
@@ -221,12 +261,207 @@ export function ServicesPricingPage() {
       setIsCreateModalOpen(false);
       setNewPkgName('');
       setNewPkgDescription('');
+      setNewPkgMinPrice(0);
+      setNewPkgMaxPrice(0);
+      setNewPkgFeatures(['']);
       setActionSuccess('Service package successfully created.');
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
       setServerError(err.message || 'Failed to create package.');
     } finally {
       setCreateSubmitting(false);
+    }
+  };
+
+  const handleOpenEditPackage = (pkg: ServicePackage) => {
+    setEditingPackage(pkg);
+    setEditPkgName(pkg.name);
+    setEditPkgCategory(pkg.category);
+    setEditPkgMinPrice(pkg.priceMin || 0);
+    setEditPkgMaxPrice(pkg.priceMax || 0);
+    setEditPkgBilling(pkg.billingType);
+    setEditPkgDescription(pkg.description || '');
+    setEditPkgFeatures(pkg.features && pkg.features.length > 0 ? [...pkg.features] : ['']);
+    setServerError(null);
+    setIsEditPackageModalOpen(true);
+  };
+
+  const handleUpdatePackageSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPackage || !currentUser) return;
+
+    if (!editPkgName.trim() || editPkgMinPrice < 0 || editPkgMaxPrice < editPkgMinPrice) {
+      setServerError('Please provide a valid package name and price range.');
+      return;
+    }
+
+    setEditPackageSubmitting(true);
+    setServerError(null);
+
+    try {
+      const priceRange = `৳${editPkgMinPrice.toLocaleString()} - ৳${editPkgMaxPrice.toLocaleString()}`;
+      await updateServicePackage(
+        editingPackage.id,
+        {
+          name: editPkgName.trim(),
+          description: editPkgDescription.trim(),
+          priceMin: editPkgMinPrice,
+          priceMax: editPkgMaxPrice,
+          priceRange,
+          currency: 'BDT',
+          billingType: editPkgBilling,
+          category: editPkgCategory.trim(),
+          features: editPkgFeatures.map((f) => f.trim()).filter((f) => f.length > 0),
+        },
+        currentUser
+      );
+
+      setIsEditPackageModalOpen(false);
+      setEditingPackage(null);
+      setActionSuccess(`Service package "${editPkgName}" successfully updated.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setServerError(err.message || 'Failed to update package.');
+    } finally {
+      setEditPackageSubmitting(false);
+    }
+  };
+
+  const handleOpenDeletePackage = (pkg: ServicePackage) => {
+    setDeletingPackage(pkg);
+    setServerError(null);
+    setIsDeletePackageModalOpen(true);
+  };
+
+  const handleDeletePackageSubmit = async () => {
+    if (!deletingPackage || !currentUser) return;
+    setDeletePackageSubmitting(true);
+    setServerError(null);
+
+    try {
+      await deleteServicePackage(deletingPackage.id, deletingPackage.name, currentUser);
+      setIsDeletePackageModalOpen(false);
+      setDeletingPackage(null);
+      setActionSuccess(`Service package "${deletingPackage.name}" deleted.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setServerError(err.message || 'Failed to delete package.');
+    } finally {
+      setDeletePackageSubmitting(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Handlers: Individual Service CRUD
+  // ---------------------------------------------------------------------------
+  const handleCreateServiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+
+    if (!newSrvName.trim() || !newSrvPriceRange.trim()) {
+      setServerError('Please enter a service name and price range.');
+      return;
+    }
+
+    setCreateServiceSubmitting(true);
+    setServerError(null);
+
+    try {
+      await createAgencyService(
+        {
+          name: newSrvName.trim(),
+          category: newSrvCategory.trim(),
+          priceMin: 0,
+          priceMax: 0,
+          priceRange: newSrvPriceRange.trim().startsWith('৳') ? newSrvPriceRange.trim() : `৳${newSrvPriceRange.trim()}`,
+          description: newSrvDescription.trim(),
+          currency: 'BDT',
+          isActive: true,
+          features: [],
+        },
+        currentUser
+      );
+
+      setIsCreateServiceModalOpen(false);
+      setNewSrvName('');
+      setNewSrvPriceRange('');
+      setNewSrvDescription('');
+      setActionSuccess('Technical service successfully created.');
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setServerError(err.message || 'Failed to create service.');
+    } finally {
+      setCreateServiceSubmitting(false);
+    }
+  };
+
+  const handleOpenEditService = (srv: AgencyServiceItem) => {
+    setEditingService(srv);
+    setEditSrvName(srv.name);
+    setEditSrvCategory(srv.category);
+    setEditSrvPriceRange(srv.priceRange);
+    setEditSrvDescription(srv.description || '');
+    setServerError(null);
+    setIsEditServiceModalOpen(true);
+  };
+
+  const handleUpdateServiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingService || !currentUser) return;
+
+    if (!editSrvName.trim() || !editSrvPriceRange.trim()) {
+      setServerError('Please enter a service name and price range.');
+      return;
+    }
+
+    setEditServiceSubmitting(true);
+    setServerError(null);
+
+    try {
+      await updateAgencyService(
+        editingService.id,
+        {
+          name: editSrvName.trim(),
+          category: editSrvCategory.trim(),
+          priceRange: editSrvPriceRange.trim(),
+          description: editSrvDescription.trim(),
+          currency: 'BDT',
+        },
+        currentUser
+      );
+
+      setIsEditServiceModalOpen(false);
+      setEditingService(null);
+      setActionSuccess(`Service "${editSrvName}" successfully updated.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setServerError(err.message || 'Failed to update service.');
+    } finally {
+      setEditServiceSubmitting(false);
+    }
+  };
+
+  const handleOpenDeleteService = (srv: AgencyServiceItem) => {
+    setDeletingService(srv);
+    setServerError(null);
+    setIsDeleteServiceModalOpen(true);
+  };
+
+  const handleDeleteServiceSubmit = async () => {
+    if (!deletingService || !currentUser) return;
+    setDeleteServiceSubmitting(true);
+    setServerError(null);
+
+    try {
+      await deleteAgencyService(deletingService.id, deletingService.name, currentUser);
+      setIsDeleteServiceModalOpen(false);
+      setDeletingService(null);
+      setActionSuccess(`Service "${deletingService.name}" deleted.`);
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (err: any) {
+      setServerError(err.message || 'Failed to delete service.');
+    } finally {
+      setDeleteServiceSubmitting(false);
     }
   };
 
@@ -244,17 +479,31 @@ export function ServicesPricingPage() {
         description="Standardized agency service deliverables, recurring retainer packages in BDT (৳), live active status toggles, and direct project linking."
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus className="w-3.5 h-3.5" />}
-              onClick={() => {
-                setServerError(null);
-                setIsCreateModalOpen(true);
-              }}
-            >
-              Add Service Package
-            </Button>
+            {activeTab === 'services' ? (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  setServerError(null);
+                  setIsCreateServiceModalOpen(true);
+                }}
+              >
+                Add Individual Service
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-3.5 h-3.5" />}
+                onClick={() => {
+                  setServerError(null);
+                  setIsCreateModalOpen(true);
+                }}
+              >
+                Add Service Package
+              </Button>
+            )}
           </div>
         }
       />
@@ -352,13 +601,20 @@ export function ServicesPricingPage() {
             <div>
               <h3 className="text-sm font-bold text-slate-900">Standardized Growth Packages</h3>
               <p className="text-xs text-slate-500">
-                Core packages offered to e-commerce and lead-generation clients. Toggle active status or link to projects.
+                Core packages offered to e-commerce and lead-generation clients with edit and delete controls.
               </p>
             </div>
           </div>
 
           {loading ? (
             <div className="py-12 text-center text-xs text-slate-400">Loading service packages...</div>
+          ) : packages.length === 0 ? (
+            <Card>
+              <div className="py-12 text-center space-y-2">
+                <p className="text-sm font-semibold text-slate-700">No service packages created yet.</p>
+                <p className="text-xs text-slate-400">Click &quot;Add Service Package&quot; to build your first BDT rate card.</p>
+              </div>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {packages.map((pkg) => {
@@ -372,13 +628,30 @@ export function ServicesPricingPage() {
                     }`}
                   >
                     <div>
-                      {/* Top Category & Active Toggle */}
+                      {/* Top Category, Actions & Active Toggle */}
                       <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-100">
-                        <span className="font-semibold text-slate-500 text-[11px] truncate max-w-[170px]">
+                        <span className="font-semibold text-slate-500 text-[11px] truncate max-w-[140px]">
                           {pkg.category}
                         </span>
 
                         <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditPackage(pkg)}
+                            title="Edit Package"
+                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDeletePackage(pkg)}
+                            title="Delete Package"
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+
                           <span
                             className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                               pkg.isActive
@@ -419,14 +692,16 @@ export function ServicesPricingPage() {
                       <p className="text-xs text-slate-600 mt-2 line-clamp-2">{pkg.description}</p>
 
                       {/* Features Bullet List */}
-                      <div className="mt-4 space-y-2">
-                        {pkg.features.map((feature, idx) => (
-                          <div key={idx} className="flex items-start gap-2 text-xs text-slate-700">
-                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                            <span>{feature}</span>
-                          </div>
-                        ))}
-                      </div>
+                      {pkg.features && pkg.features.length > 0 && (
+                        <div className="mt-4 space-y-2">
+                          {pkg.features.map((feature, idx) => (
+                            <div key={idx} className="flex items-start gap-2 text-xs text-slate-700">
+                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                              <span>{feature}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Linked Projects Indicator */}
                       {linkedProjs.length > 0 && (
@@ -449,16 +724,25 @@ export function ServicesPricingPage() {
                       )}
                     </div>
 
-                    {/* Bottom Action: Link to Project */}
+                    {/* Bottom Actions */}
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center gap-2">
                       <Button
                         variant="outline"
                         size="sm"
                         icon={<LinkIcon className="w-3.5 h-3.5 text-blue-600" />}
                         onClick={() => handleOpenLinkModal(pkg)}
-                        className="w-full text-xs"
+                        className="flex-1 text-xs"
                       >
                         Link to Project
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={<Edit2 className="w-3.5 h-3.5 text-slate-600" />}
+                        onClick={() => handleOpenEditPackage(pkg)}
+                        className="text-xs"
+                      >
+                        Edit
                       </Button>
                     </div>
                   </Card>
@@ -478,64 +762,77 @@ export function ServicesPricingPage() {
             title="Individual Technical Services"
             subtitle="Granular deliverables available as add-ons or standalone contracts."
           />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/75 text-slate-600 font-semibold">
-                  <th className="px-4 py-3">Service Name</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Price Range</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {services.map((srv) => (
-                  <tr key={srv.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900">{srv.name}</p>
-                      <p className="text-[11px] text-slate-500 line-clamp-1">{srv.description}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge variant="neutral">{srv.category}</Badge>
-                    </td>
-                    <td className="px-4 py-3 font-mono font-bold text-slate-900">{srv.priceRange}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleService(srv)}
-                        className="inline-flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
-                      >
-                        {srv.isActive ? (
-                          <span className="text-emerald-700 flex items-center gap-1">
-                            <ToggleRight className="w-5 h-5 text-emerald-600" /> Active
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 flex items-center gap-1">
-                            <ToggleLeft className="w-5 h-5 text-slate-400" /> Inactive
-                          </span>
-                        )}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          const matchingPkg = packages.find((p) => p.category.includes(srv.category));
-                          if (matchingPkg) handleOpenLinkModal(matchingPkg);
-                          else handleOpenLinkModal(packages[0]);
-                        }}
-                      >
-                        Attach
-                      </Button>
-                    </td>
+          {services.length === 0 ? (
+            <div className="py-12 text-center space-y-2">
+              <p className="text-sm font-semibold text-slate-700">No individual services configured yet.</p>
+              <p className="text-xs text-slate-400">Click &quot;Add Individual Service&quot; to define technical offerings.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/75 text-slate-600 font-semibold">
+                    <th className="px-4 py-3">Service Name</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Price Range</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {services.map((srv) => (
+                    <tr key={srv.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">{srv.name}</p>
+                        <p className="text-[11px] text-slate-500 line-clamp-1">{srv.description}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="neutral">{srv.category}</Badge>
+                      </td>
+                      <td className="px-4 py-3 font-mono font-bold text-slate-900">{srv.priceRange}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleService(srv)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                        >
+                          {srv.isActive ? (
+                            <span className="text-emerald-700 flex items-center gap-1">
+                              <ToggleRight className="w-5 h-5 text-emerald-600" /> Active
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 flex items-center gap-1">
+                              <ToggleLeft className="w-5 h-5 text-slate-400" /> Inactive
+                            </span>
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditService(srv)}
+                            title="Edit Service"
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDeleteService(srv)}
+                            title="Delete Service"
+                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 
@@ -579,12 +876,12 @@ export function ServicesPricingPage() {
                             <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
                               {linkedPackage.name}
                             </span>
-                            <span className="font-mono text-[11px] text-slate-500 font-medium">
-                              ({linkedPackage.priceRange})
+                            <span className="text-[11px] font-mono text-slate-500">
+                              {linkedPackage.priceRange}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-slate-400 italic">No package assigned</span>
+                          <span className="text-slate-400 italic text-[11px]">No package attached</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -592,9 +889,8 @@ export function ServicesPricingPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            icon={<Unlink className="w-3 h-3 text-rose-500" />}
-                            onClick={() => handleUnlinkProject(linkedPackage.id, proj.id)}
                             className="h-7 text-xs text-rose-600 hover:text-rose-700"
+                            onClick={() => handleUnlinkProject(linkedPackage.id, proj.id)}
                           >
                             Unlink
                           </Button>
@@ -602,9 +898,10 @@ export function ServicesPricingPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            icon={<LinkIcon className="w-3 h-3 text-blue-600" />}
-                            onClick={() => handleOpenLinkModal(packages[0])}
                             className="h-7 text-xs"
+                            onClick={() => {
+                              if (packages.length > 0) handleOpenLinkModal(packages[0]);
+                            }}
                           >
                             Assign Package
                           </Button>
@@ -634,7 +931,6 @@ export function ServicesPricingPage() {
           maxWidth="md"
         >
           <div className="space-y-4">
-            {/* Package details strip */}
             <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs space-y-1">
               <div className="flex justify-between">
                 <span className="text-slate-500">Package:</span>
@@ -652,7 +948,6 @@ export function ServicesPricingPage() {
               </div>
             </div>
 
-            {/* Currently Linked Projects */}
             {getLinkedProjects(selectedPackageForLink).length > 0 && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -681,8 +976,7 @@ export function ServicesPricingPage() {
               </div>
             )}
 
-            {/* Link another project form */}
-            <form onSubmit={handleLinkProjectSubmit} className="space-y-3 pt-2 border-t border-slate-100">
+            <form onSubmit={handleLinkProjectSubmit} autoComplete="off" className="space-y-3 pt-2 border-t border-slate-100">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Select Project to Link <span className="text-red-500">*</span>
@@ -737,12 +1031,13 @@ export function ServicesPricingPage() {
         description="Add a new agency package with custom deliverables and BDT pricing tier."
         maxWidth="md"
       >
-        <form onSubmit={handleCreatePackageSubmit} className="space-y-4">
+        <form onSubmit={handleCreatePackageSubmit} autoComplete="off" className="space-y-4">
           <Input
             label="Package Name"
             placeholder="E.g. Full-Funnel CRO & Attribution"
             value={newPkgName}
             onChange={(e) => setNewPkgName(e.target.value)}
+            autoComplete="off"
             required
           />
 
@@ -780,17 +1075,21 @@ export function ServicesPricingPage() {
             <Input
               type="number"
               step="500"
+              min="0"
               label="Min Price (৳ BDT)"
               value={newPkgMinPrice}
               onChange={(e) => setNewPkgMinPrice(parseInt(e.target.value) || 0)}
+              autoComplete="off"
               required
             />
             <Input
               type="number"
               step="500"
+              min="0"
               label="Max Price (৳ BDT)"
               value={newPkgMaxPrice}
               onChange={(e) => setNewPkgMaxPrice(parseInt(e.target.value) || 0)}
+              autoComplete="off"
               required
             />
           </div>
@@ -800,6 +1099,7 @@ export function ServicesPricingPage() {
             placeholder="High-level value proposition for clients"
             value={newPkgDescription}
             onChange={(e) => setNewPkgDescription(e.target.value)}
+            autoComplete="off"
             required
           />
 
@@ -820,6 +1120,7 @@ export function ServicesPricingPage() {
                   <input
                     type="text"
                     value={feat}
+                    autoComplete="off"
                     onChange={(e) => {
                       const updated = [...newPkgFeatures];
                       updated[idx] = e.target.value;
@@ -827,7 +1128,6 @@ export function ServicesPricingPage() {
                     }}
                     placeholder="Deliverable bullet point"
                     className="w-full text-xs py-1.5 px-2.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                    required
                   />
                   {newPkgFeatures.length > 1 && (
                     <button
@@ -863,6 +1163,404 @@ export function ServicesPricingPage() {
           </div>
         </form>
       </Modal>
+
+      {/* =========================================================================
+          MODAL 3: Edit Service Package
+      ========================================================================= */}
+      {editingPackage && (
+        <Modal
+          isOpen={isEditPackageModalOpen}
+          onClose={() => {
+            setIsEditPackageModalOpen(false);
+            setEditingPackage(null);
+          }}
+          title={`Edit Package: ${editingPackage.name}`}
+          description="Update rate card pricing in BDT, scope deliverables, or category details."
+          maxWidth="md"
+        >
+          <form onSubmit={handleUpdatePackageSubmit} autoComplete="off" className="space-y-4">
+            <Input
+              label="Package Name"
+              value={editPkgName}
+              onChange={(e) => setEditPkgName(e.target.value)}
+              autoComplete="off"
+              required
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Category</label>
+                <select
+                  value={editPkgCategory}
+                  onChange={(e) => setEditPkgCategory(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg text-xs text-slate-900 py-2 px-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="Paid Media & Scaling">Paid Media & Scaling</option>
+                  <option value="Server-Side Tracking & CAPI">Server-Side Tracking & CAPI</option>
+                  <option value="Full-Funnel Growth Partnership">Full-Funnel Growth Partnership</option>
+                  <option value="Attribution & Analytics">Attribution & Analytics</option>
+                  <option value="CRO & Funnel Optimization">CRO & Funnel Optimization</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Billing Type</label>
+                <select
+                  value={editPkgBilling}
+                  onChange={(e) => setEditPkgBilling(e.target.value as ServiceBillingType)}
+                  className="w-full bg-white border border-slate-200 rounded-lg text-xs text-slate-900 py-2 px-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="monthly_retainer">Monthly Retainer</option>
+                  <option value="one_time">One-Time Project</option>
+                  <option value="sprint">Weekly Sprint</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                type="number"
+                step="500"
+                min="0"
+                label="Min Price (৳ BDT)"
+                value={editPkgMinPrice}
+                onChange={(e) => setEditPkgMinPrice(parseInt(e.target.value) || 0)}
+                autoComplete="off"
+                required
+              />
+              <Input
+                type="number"
+                step="500"
+                min="0"
+                label="Max Price (৳ BDT)"
+                value={editPkgMaxPrice}
+                onChange={(e) => setEditPkgMaxPrice(parseInt(e.target.value) || 0)}
+                autoComplete="off"
+                required
+              />
+            </div>
+
+            <Input
+              label="Brief Description"
+              value={editPkgDescription}
+              onChange={(e) => setEditPkgDescription(e.target.value)}
+              autoComplete="off"
+              required
+            />
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-slate-700">Scope Deliverables</label>
+                <button
+                  type="button"
+                  onClick={() => setEditPkgFeatures([...editPkgFeatures, ''])}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  + Add Deliverable
+                </button>
+              </div>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {editPkgFeatures.map((feat, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={feat}
+                      autoComplete="off"
+                      onChange={(e) => {
+                        const updated = [...editPkgFeatures];
+                        updated[idx] = e.target.value;
+                        setEditPkgFeatures(updated);
+                      }}
+                      placeholder="Deliverable bullet point"
+                      className="w-full text-xs py-1.5 px-2.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                    />
+                    {editPkgFeatures.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditPkgFeatures(editPkgFeatures.filter((_, i) => i !== idx))}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsEditPackageModalOpen(false);
+                  setEditingPackage(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={editPackageSubmitting}
+              >
+                {editPackageSubmitting ? 'Saving Changes...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* =========================================================================
+          MODAL 4: Delete Service Package Confirmation
+      ========================================================================= */}
+      {deletingPackage && (
+        <Modal
+          isOpen={isDeletePackageModalOpen}
+          onClose={() => {
+            setIsDeletePackageModalOpen(false);
+            setDeletingPackage(null);
+          }}
+          title="Delete Service Package"
+          maxWidth="sm"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsDeletePackageModalOpen(false);
+                  setDeletingPackage(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={deletePackageSubmitting}
+                onClick={handleDeletePackageSubmit}
+              >
+                {deletePackageSubmitting ? 'Deleting...' : 'Delete Package'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3 py-2 text-sm text-slate-600">
+            <p>Are you sure you want to delete this rate card package?</p>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg">
+              <p className="font-bold text-rose-900">{deletingPackage.name}</p>
+              <p className="text-xs text-rose-700 mt-0.5">{deletingPackage.priceRange}</p>
+            </div>
+            <p className="text-xs text-slate-500">
+              This action will remove the package from the catalog. Linked projects will remain intact.
+            </p>
+          </div>
+        </Modal>
+      )}
+
+      {/* =========================================================================
+          MODAL 5: Create Individual Service
+      ========================================================================= */}
+      <Modal
+        isOpen={isCreateServiceModalOpen}
+        onClose={() => setIsCreateServiceModalOpen(false)}
+        title="Add Individual Technical Service"
+        description="Add a granular deliverable item to the agency service catalog."
+        maxWidth="md"
+      >
+        <form onSubmit={handleCreateServiceSubmit} autoComplete="off" className="space-y-4">
+          <Input
+            label="Service Name"
+            placeholder="E.g. Server-Side Google Tag Manager Setup"
+            value={newSrvName}
+            onChange={(e) => setNewSrvName(e.target.value)}
+            autoComplete="off"
+            required
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Category</label>
+              <select
+                value={newSrvCategory}
+                onChange={(e) => setNewSrvCategory(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg text-xs text-slate-900 py-2 px-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="Tracking & Infrastructure">Tracking & Infrastructure</option>
+                <option value="Paid Media Scaling">Paid Media Scaling</option>
+                <option value="Attribution & Analytics">Attribution & Analytics</option>
+                <option value="Creative & Copywriting">Creative & Copywriting</option>
+                <option value="Conversion Optimization">Conversion Optimization</option>
+              </select>
+            </div>
+
+            <Input
+              label="Price Range (BDT)"
+              placeholder="E.g. ৳15,000 - ৳25,000"
+              value={newSrvPriceRange}
+              onChange={(e) => setNewSrvPriceRange(e.target.value)}
+              autoComplete="off"
+              required
+            />
+          </div>
+
+          <Input
+            label="Description / Deliverable Specs"
+            placeholder="Technical scope included in this deliverable"
+            value={newSrvDescription}
+            onChange={(e) => setNewSrvDescription(e.target.value)}
+            autoComplete="off"
+            required
+          />
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCreateServiceModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={createServiceSubmitting}
+            >
+              {createServiceSubmitting ? 'Adding...' : 'Add Service'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* =========================================================================
+          MODAL 6: Edit Individual Service
+      ========================================================================= */}
+      {editingService && (
+        <Modal
+          isOpen={isEditServiceModalOpen}
+          onClose={() => {
+            setIsEditServiceModalOpen(false);
+            setEditingService(null);
+          }}
+          title={`Edit Service: ${editingService.name}`}
+          maxWidth="md"
+        >
+          <form onSubmit={handleUpdateServiceSubmit} autoComplete="off" className="space-y-4">
+            <Input
+              label="Service Name"
+              value={editSrvName}
+              onChange={(e) => setEditSrvName(e.target.value)}
+              autoComplete="off"
+              required
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">Category</label>
+                <select
+                  value={editSrvCategory}
+                  onChange={(e) => setEditSrvCategory(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-lg text-xs text-slate-900 py-2 px-2.5 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="Tracking & Infrastructure">Tracking & Infrastructure</option>
+                  <option value="Paid Media Scaling">Paid Media Scaling</option>
+                  <option value="Attribution & Analytics">Attribution & Analytics</option>
+                  <option value="Creative & Copywriting">Creative & Copywriting</option>
+                  <option value="Conversion Optimization">Conversion Optimization</option>
+                </select>
+              </div>
+
+              <Input
+                label="Price Range"
+                value={editSrvPriceRange}
+                onChange={(e) => setEditSrvPriceRange(e.target.value)}
+                autoComplete="off"
+                required
+              />
+            </div>
+
+            <Input
+              label="Description / Deliverable Specs"
+              value={editSrvDescription}
+              onChange={(e) => setEditSrvDescription(e.target.value)}
+              autoComplete="off"
+              required
+            />
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsEditServiceModalOpen(false);
+                  setEditingService(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={editServiceSubmitting}
+              >
+                {editServiceSubmitting ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* =========================================================================
+          MODAL 7: Delete Individual Service Confirmation
+      ========================================================================= */}
+      {deletingService && (
+        <Modal
+          isOpen={isDeleteServiceModalOpen}
+          onClose={() => {
+            setIsDeleteServiceModalOpen(false);
+            setDeletingService(null);
+          }}
+          title="Delete Individual Service"
+          maxWidth="sm"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsDeleteServiceModalOpen(false);
+                  setDeletingService(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={deleteServiceSubmitting}
+                onClick={handleDeleteServiceSubmit}
+              >
+                {deleteServiceSubmitting ? 'Deleting...' : 'Delete Service'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3 py-2 text-sm text-slate-600">
+            <p>Are you sure you want to delete this technical service from the catalog?</p>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg">
+              <p className="font-bold text-rose-900">{deletingService.name}</p>
+              <p className="text-xs text-rose-700 mt-0.5">{deletingService.priceRange}</p>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

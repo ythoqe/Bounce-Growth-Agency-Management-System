@@ -149,7 +149,14 @@ const PLATFORM_CONFIG: Record<
 };
 
 export function ContentCalendarPage() {
-  const { currentUser, currentRole } = useAuth();
+  const {
+    currentUser,
+    currentRole,
+    firebaseUser,
+    isLiveAuth,
+    isLoading: isAuthLoading,
+    signInWithGoogle,
+  } = useAuth();
 
   // Firestore Real-time state
   const [items, setItems] = useState<ContentItem[]>([]);
@@ -179,15 +186,26 @@ export function ContentCalendarPage() {
 
   // Subscriptions
   useEffect(() => {
+    // Wait until auth state finishes initializing
+    if (isAuthLoading) {
+      return;
+    }
+
+    if (!firebaseUser && !isLiveAuth) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const unsubItems = subscribeContentItems(
       (data) => {
         setItems(data);
         setLoading(false);
+        setAlertError(null);
       },
       (err) => {
         console.error('Failed to subscribe content calendar:', err);
-        setAlertError('Unable to load content items from Firestore');
+        setAlertError(err.message || 'Unable to load content items from Firestore');
         setLoading(false);
       }
     );
@@ -202,7 +220,7 @@ export function ContentCalendarPage() {
       unsubItems();
       unsubClients();
     };
-  }, [currentRole, currentUser]);
+  }, [currentRole, currentUser, firebaseUser, isLiveAuth, isAuthLoading]);
 
   // Dismiss feedback automatically
   useEffect(() => {
@@ -379,6 +397,23 @@ export function ContentCalendarPage() {
             className="text-emerald-600 hover:text-emerald-800"
           >
             <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {!isLiveAuth && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="font-medium">
+              Google Sign-In Required: Sign in with your agency account to sync marketing content items live with Cloud Firestore.
+            </span>
+          </div>
+          <button
+            onClick={() => signInWithGoogle()}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold shrink-0 cursor-pointer"
+          >
+            Sign in with Google
           </button>
         </div>
       )}

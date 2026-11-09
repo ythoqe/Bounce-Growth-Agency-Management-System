@@ -4,6 +4,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -13,6 +14,7 @@ import { handleFirestoreError, OperationType } from '../firebase/firestoreErrors
 import { Project, ProjectStatus } from '../../types/project';
 import { ProjectSchema } from '../../schemas';
 import { logAuditEvent } from '../audit/auditService';
+import { stripUndefined } from '../../utils/cleanFirestore';
 
 const COLLECTION = 'projects';
 
@@ -87,7 +89,7 @@ export async function createProject(
   };
 
   try {
-    await setDoc(doc(db, COLLECTION, projectId), newProject);
+    await setDoc(doc(db, COLLECTION, projectId), stripUndefined(newProject));
 
     await logAuditEvent({
       actorUserId: actor.uid,
@@ -117,7 +119,7 @@ export async function updateProject(
       updatedAt: new Date().toISOString(),
     };
 
-    await updateDoc(doc(db, COLLECTION, projectId), payload);
+    await updateDoc(doc(db, COLLECTION, projectId), stripUndefined(payload));
 
     await logAuditEvent({
       actorUserId: actor.uid,
@@ -147,3 +149,31 @@ export async function restoreProject(
 ): Promise<void> {
   await updateProject(projectId, { status: targetStatus }, actor);
 }
+
+/**
+ * Permanently delete a project from Firestore
+ */
+export async function deleteProject(
+  projectId: string,
+  projectName: string,
+  actor: { uid: string; email: string; role: string }
+): Promise<void> {
+  const path = `${COLLECTION}/${projectId}`;
+  try {
+    const docRef = doc(db, COLLECTION, projectId);
+    await deleteDoc(docRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'project_deleted',
+      entityType: 'project',
+      entityId: projectId,
+      details: `Permanently deleted project "${projectName}"`,
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+}
+

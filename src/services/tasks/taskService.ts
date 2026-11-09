@@ -17,6 +17,7 @@ import { TaskSchema } from '../../schemas';
 import { handleFirestoreError, OperationType } from '../firebase/firestoreErrors';
 import { logAuditEvent } from '../audit/auditService';
 import { createNotification } from '../notifications/notificationService';
+import { stripUndefined } from '../../utils/cleanFirestore';
 
 export async function createTask(
   data: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>,
@@ -38,7 +39,7 @@ export async function createTask(
   };
 
   try {
-    await setDoc(taskRef, payload);
+    await setDoc(taskRef, stripUndefined(payload));
 
     await logAuditEvent({
       actorUserId: actor.uid,
@@ -92,7 +93,7 @@ export async function updateTask(
       updatePayload.progressPercentage = 100;
     }
 
-    await updateDoc(taskRef, updatePayload);
+    await updateDoc(taskRef, stripUndefined(updatePayload));
 
     await logAuditEvent({
       actorUserId: actor.uid,

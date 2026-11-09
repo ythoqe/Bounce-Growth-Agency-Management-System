@@ -30,6 +30,7 @@ import {
   Activity,
   ChevronRight,
   Info,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { ClientProfile, ClientStatus, ServiceCategory, ClientInvitation } from '../../types/client';
@@ -37,6 +38,7 @@ import {
   subscribeClients,
   createClient,
   updateClient,
+  deleteClient,
   archiveClient,
   restoreClient,
   inviteClientContact,
@@ -60,8 +62,8 @@ const ALL_SERVICES: { value: ServiceCategory; label: string }[] = [
 export function ClientsPage() {
   const { currentUser, isLiveAuth, firebaseUser, signInWithGoogle } = useAuth();
   const actor = {
-    uid: currentUser?.id || 'usr_admin_bounce',
-    email: currentUser?.email || 'founder@bouncegrowth.com',
+    uid: firebaseUser?.uid || currentUser?.id || 'usr_admin_bounce',
+    email: firebaseUser?.email || currentUser?.email || 'founder@bouncegrowth.com',
     role: currentUser?.role || 'admin',
   };
 
@@ -84,13 +86,13 @@ export function ClientsPage() {
   const [formEmail, setFormEmail] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formWebsite, setFormWebsite] = useState('');
-  const [formBusinessType, setFormBusinessType] = useState('E-commerce');
-  const [formIndustry, setFormIndustry] = useState('Retail & Fashion');
+  const [formBusinessType, setFormBusinessType] = useState('');
+  const [formIndustry, setFormIndustry] = useState('');
   const [formCountry, setFormCountry] = useState('Bangladesh');
   const [formStatus, setFormStatus] = useState<ClientStatus>('onboarding');
-  const [formCurrency, setFormCurrency] = useState<'USD' | 'BDT'>('USD');
-  const [formRetainer, setFormRetainer] = useState('1500');
-  const [formServices, setFormServices] = useState<ServiceCategory[]>(['server_side_tracking', 'meta_ads']);
+  const [formCurrency, setFormCurrency] = useState<'USD' | 'BDT'>('BDT');
+  const [formRetainer, setFormRetainer] = useState('');
+  const [formServices, setFormServices] = useState<ServiceCategory[]>([]);
   const [formInternalNotes, setFormInternalNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,6 +109,25 @@ export function ClientsPage() {
   const [loadingDetailNotes, setLoadingDetailNotes] = useState(false);
   const [migrationStatus, setMigrationStatus] = useState<string | null>(null);
   const [isMigrating, setIsMigrating] = useState(false);
+
+  // Delete Client State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<ClientProfile | null>(null);
+  const [isDeletingClient, setIsDeletingClient] = useState(false);
+
+  const handleDeleteClientConfirm = async () => {
+    if (!clientToDelete) return;
+    try {
+      setIsDeletingClient(true);
+      await deleteClient(clientToDelete.id, clientToDelete.businessName, actor);
+      setIsDeleteModalOpen(false);
+      setClientToDelete(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete client');
+    } finally {
+      setIsDeletingClient(false);
+    }
+  };
 
   // Real-time listener for Clients (attached only when authenticated; scoped by role)
   useEffect(() => {
@@ -157,13 +178,13 @@ export function ClientsPage() {
     setFormEmail('');
     setFormPhone('');
     setFormWebsite('');
-    setFormBusinessType('E-commerce');
-    setFormIndustry('Retail & Fashion');
+    setFormBusinessType('');
+    setFormIndustry('');
     setFormCountry('Bangladesh');
     setFormStatus('onboarding');
-    setFormCurrency('USD');
-    setFormRetainer('1500');
-    setFormServices(['server_side_tracking', 'meta_ads']);
+    setFormCurrency('BDT');
+    setFormRetainer('');
+    setFormServices([]);
     setFormInternalNotes('');
     setFormError(null);
     setInviteSuccess(null);
@@ -223,6 +244,16 @@ export function ClientsPage() {
     e.preventDefault();
     setFormError(null);
     setIsSubmitting(true);
+
+    if (!isLiveAuth || !firebaseUser) {
+      try {
+        await signInWithGoogle();
+      } catch (err: any) {
+        setFormError('Authentication required: You must sign in with Google to create a client in Cloud Firestore.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     try {
       await createClient(
@@ -474,6 +505,21 @@ export function ClientsPage() {
           >
             {row.status === 'archived' ? 'Restore' : 'Archive'}
           </Button>
+          {actor.role === 'admin' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setClientToDelete(row);
+                setIsDeleteModalOpen(true);
+              }}
+              icon={<Trash2 className="w-3.5 h-3.5 text-red-500" />}
+              className="text-xs h-7 px-2 text-red-600 hover:bg-red-50"
+              title="Delete Client"
+            >
+              Delete
+            </Button>
+          )}
         </div>
       ),
     },
@@ -591,8 +637,40 @@ export function ClientsPage() {
           </>
         }
       >
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          {formError && <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">{formError}</p>}
+        <form onSubmit={handleCreateSubmit} autoComplete="off" className="space-y-4">
+          {!isLiveAuth && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-center gap-2 text-amber-900">
+                <Shield className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>Google sign-in as <strong>hmmojjammalhoq@gmail.com</strong> is required to save clients to Cloud Firestore.</span>
+              </div>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={signInWithGoogle}
+                className="shrink-0 text-xs"
+              >
+                Sign in with Google
+              </Button>
+            </div>
+          )}
+          {formError && (
+            <div className="p-2.5 rounded-lg border border-rose-200 bg-rose-50 text-xs text-rose-700 flex flex-col gap-2">
+              <p>{formError}</p>
+              {!isLiveAuth && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={signInWithGoogle}
+                  className="w-fit text-xs"
+                >
+                  Sign in with Google
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
@@ -744,7 +822,7 @@ export function ClientsPage() {
           </>
         }
       >
-        <form onSubmit={handleEditSubmit} className="space-y-4">
+        <form onSubmit={handleEditSubmit} autoComplete="off" className="space-y-4">
           {formError && <p className="text-xs text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">{formError}</p>}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -998,6 +1076,50 @@ export function ClientsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Delete Client Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setClientToDelete(null);
+        }}
+        title="Permanently Delete Client Organization"
+        description="Are you sure you want to permanently delete this client? All organization records will be removed."
+        footer={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setClientToDelete(null);
+              }}
+              disabled={isDeletingClient}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteClientConfirm}
+              loading={isDeletingClient}
+            >
+              Permanently Delete Client
+            </Button>
+          </>
+        }
+      >
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs sm:text-sm text-red-800 space-y-1">
+          <p className="font-semibold">{clientToDelete?.businessName}</p>
+          <p className="text-slate-600">
+            Primary Contact: {clientToDelete?.contactPerson} ({clientToDelete?.email})
+          </p>
+          <p className="text-red-700 font-medium mt-2">
+            Warning: This action deletes the client document from Cloud Firestore and cannot be undone.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

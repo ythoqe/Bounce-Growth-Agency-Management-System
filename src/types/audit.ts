@@ -28,12 +28,35 @@ export type AuditActionType =
   | 'package_linked_to_project'
   | 'package_unlinked_from_project'
   | 'package_created'
+  | 'package_updated'
+  | 'package_deleted'
+  | 'service_created'
+  | 'service_updated'
+  | 'service_deleted'
   | 'content_item_created'
   | 'content_item_updated'
   | 'content_item_deleted'
   | 'content_item_status_changed'
   | 'document_deleted'
-  | 'document_visibility_changed';
+  | 'document_visibility_changed'
+  | 'deliverable_updated'
+  | 'deliverable_deleted'
+  | 'user_created'
+  | 'user_deleted'
+  | 'lead_created'
+  | 'lead_updated'
+  | 'lead_deleted'
+  | 'lead_stage_changed'
+  | 'lead_converted_to_client'
+  | 'sop_created'
+  | 'sop_updated'
+  | 'sop_deleted'
+  | 'project_created'
+  | 'project_updated'
+  | 'project_deleted'
+  | 'asset_created'
+  | 'asset_updated'
+  | 'asset_deleted';
 
 export interface AuditLogEntry {
   id: string;
@@ -58,6 +81,8 @@ export interface AuditLogEntry {
     | 'service_package'
     | 'agency_service'
     | 'content_item'
+    | 'lead'
+    | 'sop'
     | 'system';
   entityId: string;
   details: string;

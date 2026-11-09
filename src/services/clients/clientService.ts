@@ -5,6 +5,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -17,6 +18,7 @@ import { handleFirestoreError, OperationType } from '../firebase/firestoreErrors
 import { ClientProfile, ClientInvitation, ClientStatus, ClientInternalNote } from '../../types/client';
 import { ClientSchema, ClientInvitationSchema, ClientInternalNotesSchema } from '../../schemas';
 import { logAuditEvent } from '../audit/auditService';
+import { stripUndefined } from '../../utils/cleanFirestore';
 
 const COLLECTION = 'clients';
 const NOTES_COLLECTION = 'client_internal_notes';
@@ -93,6 +95,9 @@ export async function saveClientInternalNotes(
   notes: string,
   actor: { uid: string; email: string; role: string }
 ): Promise<void> {
+  if (!auth?.currentUser) {
+    throw new Error('Authentication required: Please sign in with Google to save internal notes.');
+  }
   const path = `${NOTES_COLLECTION}/${clientId}`;
   try {
     const payload: ClientInternalNote = {
@@ -145,9 +150,13 @@ export async function createClient(
     createdBy: actor.uid,
   };
 
+  if (!auth?.currentUser) {
+    throw new Error('Authentication required: You must be signed in with Google (hmmojjammalhoq@gmail.com) to save clients to Cloud Firestore.');
+  }
+
   try {
     // Write client document without internalNotes
-    await setDoc(doc(db, COLLECTION, clientId), newClient);
+    await setDoc(doc(db, COLLECTION, clientId), stripUndefined(newClient));
 
     // Save internalNotes to isolated collection if present
     if (internalNotes && internalNotes.trim().length > 0) {
@@ -175,6 +184,9 @@ export async function updateClient(
   input: Partial<ClientProfile>,
   actor: { uid: string; email: string; role: string }
 ): Promise<void> {
+  if (!auth?.currentUser) {
+    throw new Error('Authentication required: Please sign in with Google to update clients in Cloud Firestore.');
+  }
   const path = `${COLLECTION}/${clientId}`;
   try {
     // If internalNotes is supplied, route it to isolated collection
@@ -190,7 +202,7 @@ export async function updateClient(
       updatedAt: new Date().toISOString(),
     };
 
-    await updateDoc(doc(db, COLLECTION, clientId), updatePayload);
+    await updateDoc(doc(db, COLLECTION, clientId), stripUndefined(updatePayload));
 
     await logAuditEvent({
       actorUserId: actor.uid,
@@ -436,3 +448,37 @@ export async function migrateExistingInternalNotes(actor: { uid: string; email: 
     return results;
   }
 }
+
+/**
+ * Permanently delete a client document from Firestore
+ */
+export async function deleteClient(
+  clientId: string,
+  businessName: string,
+  actor: { uid: string; email: string; role: string }
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can permanently delete client records.');
+  }
+
+  const clientRef = doc(db, COLLECTION, clientId);
+  await deleteDoc(clientRef);
+
+  // Clean up internal notes if present
+  try {
+    await deleteDoc(doc(db, NOTES_COLLECTION, clientId));
+  } catch {
+    // optional cleanup
+  }
+
+  await logAuditEvent({
+    actorUserId: actor.uid,
+    actorEmail: actor.email,
+    actorRole: actor.role,
+    action: 'client_deleted',
+    entityType: 'client',
+    entityId: clientId,
+    details: `Deleted client organization "${businessName}"`,
+  });
+}
+

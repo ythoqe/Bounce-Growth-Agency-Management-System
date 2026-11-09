@@ -4,6 +4,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   onSnapshot,
@@ -142,3 +143,31 @@ export async function restoreTrackingAsset(
 ): Promise<void> {
   await updateTrackingAsset(assetId, { status: 'active' }, actor);
 }
+
+/**
+ * Permanently delete a tracking asset document
+ */
+export async function deleteTrackingAsset(
+  assetId: string,
+  assetName: string,
+  actor: { uid: string; email: string; role: string }
+): Promise<void> {
+  const path = `${COLLECTION}/${assetId}`;
+  try {
+    const docRef = doc(db, COLLECTION, assetId);
+    await deleteDoc(docRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'asset_deleted',
+      entityType: 'asset',
+      entityId: assetId,
+      details: `Permanently deleted tracking asset "${assetName}"`,
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+}
+

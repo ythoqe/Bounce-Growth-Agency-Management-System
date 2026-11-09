@@ -44,7 +44,14 @@ import { ClientProfile } from '../../types/client';
 import { Project } from '../../types/project';
 
 export function DocumentsPage() {
-  const { currentUser, currentRole } = useAuth();
+  const {
+    currentUser,
+    currentRole,
+    firebaseUser,
+    isLiveAuth,
+    isLoading: isAuthLoading,
+    signInWithGoogle,
+  } = useAuth();
 
   // Firestore Real-time data
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -70,17 +77,23 @@ export function DocumentsPage() {
 
   // Subscriptions
   useEffect(() => {
+    // Wait until auth state finishes initializing
+    if (isAuthLoading) {
+      return;
+    }
+
     setLoading(true);
     const unsubFiles = subscribeProjectFiles(
       (data) => {
         setFiles(data);
         setLoading(false);
+        setAlertError(null);
       },
       (err) => {
-        console.error('Files subscription error:', err);
-        setAlertError('Unable to load project files from Firestore.');
+        console.warn('Files subscription note:', err?.message || err);
         setLoading(false);
-      }
+      },
+      { actorRole: currentRole || 'team', actorUid: currentUser?.id }
     );
 
     const unsubClients = subscribeClients(
@@ -100,7 +113,7 @@ export function DocumentsPage() {
       unsubClients();
       unsubProjects();
     };
-  }, [currentRole, currentUser]);
+  }, [currentRole, currentUser, isAuthLoading, isLiveAuth, firebaseUser]);
 
   // Auto-dismiss alert
   useEffect(() => {
@@ -251,6 +264,23 @@ export function DocumentsPage() {
       />
 
       {/* Notifications */}
+      {!isLiveAuth && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm flex items-center justify-between shadow-xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="font-medium">
+              Google Sign-In Required: Sign in with your agency account to upload and sync files live with Cloud Storage and Firestore.
+            </span>
+          </div>
+          <button
+            onClick={() => signInWithGoogle()}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold shrink-0 cursor-pointer"
+          >
+            Sign in with Google
+          </button>
+        </div>
+      )}
+
       {alertSuccess && (
         <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-sm flex items-center justify-between shadow-xs animate-fade-in">
           <div className="flex items-center gap-2">

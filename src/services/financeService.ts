@@ -24,6 +24,7 @@ import {
 } from '../types/finance';
 import { handleFirestoreError, OperationType } from './firebase/firestoreErrors';
 import { logAuditEvent } from './audit/auditService';
+import { stripUndefined } from '../utils/cleanFirestore';
 
 export interface CreateInvoiceInput {
   clientId: string;
@@ -111,14 +112,17 @@ export async function createInvoice(
     const qty = Math.max(1, item.quantity || 1);
     const unitPrice = Math.max(0, item.unitPrice || 0);
     const amount = Math.round(qty * unitPrice * 100) / 100;
-    return {
+    const cleanItem: InvoiceItem = {
       id: `item_${index + 1}_${Math.random().toString(36).substring(2, 6)}`,
-      description: item.description.trim() || 'Service deliverable',
+      description: item.description?.trim() || 'Service deliverable',
       quantity: qty,
       unitPrice,
       amount,
-      serviceCategory: item.serviceCategory,
     };
+    if (item.serviceCategory && item.serviceCategory.trim()) {
+      cleanItem.serviceCategory = item.serviceCategory.trim();
+    }
+    return cleanItem;
   });
 
   // 2. Auto-calculate subtotal
@@ -153,7 +157,7 @@ export async function createInvoice(
     items,
     subtotal,
     tax,
-    taxRate: input.taxRate,
+    taxRate: input.taxRate !== undefined && input.taxRate >= 0 ? input.taxRate : 0,
     discount,
     totalAmount,
     paidAmount,
@@ -165,9 +169,10 @@ export async function createInvoice(
   };
 
   const actorUid = actor.uid || actor.id || auth?.currentUser?.uid || 'admin';
+  const cleanPayload = stripUndefined(invoiceData);
 
   try {
-    await setDoc(invoiceRef, invoiceData);
+    await setDoc(invoiceRef, cleanPayload);
 
     await logAuditEvent({
       actorUserId: actorUid,
@@ -287,9 +292,9 @@ export async function recordPayment(
       };
 
       // Write payment and transaction records, update invoice
-      txn.set(paymentRef, paymentRecord);
-      txn.set(transactionRef, transactionRecord);
-      txn.update(invoiceRef, {
+      txn.set(paymentRef, stripUndefined(paymentRecord));
+      txn.set(transactionRef, stripUndefined(transactionRecord));
+      txn.update(invoiceRef, stripUndefined({
         paidAmount: newPaidAmount,
         balanceDue: newBalanceDue,
         status: newStatus,
@@ -297,7 +302,7 @@ export async function recordPayment(
         paymentMethod: input.paymentMethod,
         paymentReference: input.referenceNumber || invoice.paymentReference || '',
         updatedAt: now,
-      });
+      }));
 
       return { payment: paymentRecord, invoice: updatedInvoice };
     });
@@ -507,8 +512,8 @@ export async function createExpense(
 
   try {
     const batch = writeBatch(db);
-    batch.set(expenseRef, expenseData);
-    batch.set(transactionRef, transactionData);
+    batch.set(expenseRef, stripUndefined(expenseData));
+    batch.set(transactionRef, stripUndefined(transactionData));
     await batch.commit();
 
     await logAuditEvent({
@@ -604,3 +609,103 @@ export function subscribeTransactions(
     }
   );
 }
+
+/**
+ * Permanently delete an invoice from Firestore
+ */
+export async function deleteInvoice(
+  invoiceId: string,
+  invoiceNumber: string,
+  actor: FinanceActor
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can delete invoices.');
+  }
+
+  const invoiceRef = doc(db, 'invoices', invoiceId);
+  try {
+    await deleteDoc(invoiceRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.agency',
+      actorRole: 'admin',
+      action: 'invoice_issued',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      details: `Permanently deleted invoice ${invoiceNumber}`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `invoices/${invoiceId}`);
+    throw err;
+  }
+}
+
+/**
+ * Void an invoice
+ */
+export async function voidInvoice(
+  invoiceId: string,
+  invoiceNumber: string,
+  actor: FinanceActor
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can void invoices.');
+  }
+
+  const invoiceRef = doc(db, 'invoices', invoiceId);
+  try {
+    await updateDoc(invoiceRef, {
+      status: 'voided',
+      updatedAt: new Date().toISOString(),
+    });
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.agency',
+      actorRole: 'admin',
+      action: 'invoice_issued',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      details: `Voided invoice ${invoiceNumber}`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `invoices/${invoiceId}`);
+    throw err;
+  }
+}
+
+/**
+ * Delete an operating expense from Firestore
+ */
+export async function deleteExpense(
+  expenseId: string,
+  category: string,
+  actor: FinanceActor
+): Promise<void> {
+  if (actor.role !== 'admin') {
+    throw new Error('Only Admin can delete expenses.');
+  }
+
+  const expenseRef = doc(db, 'expenses', expenseId);
+  try {
+    await deleteDoc(expenseRef);
+
+    await logAuditEvent({
+      actorUserId: actor.uid || actor.id || 'admin',
+      actorEmail: actor.email || 'admin@bouncegrowth.agency',
+      actorRole: 'admin',
+      action: 'expense_recorded',
+      entityType: 'expense',
+      entityId: expenseId,
+      details: `Deleted expense record (${category})`,
+      status: 'success',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `expenses/${expenseId}`);
+    throw err;
+  }
+}
+

@@ -23,12 +23,14 @@ import {
   UserCheck,
   Edit2,
   Trash2,
+  Filter,
   Kanban,
   List,
   CheckCircle2,
   AlertCircle,
   ExternalLink,
   Shield,
+  X,
 } from 'lucide-react';
 import {
   subscribeLeads,
@@ -85,6 +87,8 @@ export function CrmPage() {
   // Filters & Views
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [serviceFilter, setServiceFilter] = useState<string>('all');
+  const [valueRangeFilter, setValueRangeFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
 
   // Modals
@@ -150,9 +154,23 @@ export function CrmPage() {
         (lead.website && lead.website.toLowerCase().includes(q)) ||
         lead.serviceInterest.toLowerCase().includes(q);
 
-      return matchesTab && matchesSearch;
+      if (!matchesTab || !matchesSearch) return false;
+
+      if (serviceFilter !== 'all' && lead.serviceInterest !== serviceFilter) {
+        return false;
+      }
+
+      if (valueRangeFilter !== 'all') {
+        const val = Number(lead.estimatedValue) || 0;
+        const bdtVal = lead.currency === 'USD' ? val * 120 : val;
+        if (valueRangeFilter === 'under50k' && bdtVal >= 50000) return false;
+        if (valueRangeFilter === '50k-150k' && (bdtVal < 50000 || bdtVal > 150000)) return false;
+        if (valueRangeFilter === 'over150k' && bdtVal <= 150000) return false;
+      }
+
+      return true;
     });
-  }, [leads, activeTab, searchQuery]);
+  }, [leads, activeTab, searchQuery, serviceFilter, valueRangeFilter]);
 
   // Metrics
   const metrics = useMemo(() => {
@@ -458,6 +476,90 @@ export function CrmPage() {
             leftIcon={<Search className="w-4 h-4 text-slate-400" />}
             autoComplete="off"
           />
+        </div>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-2xs text-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
+            <Filter className="w-3.5 h-3.5 text-blue-600" />
+            <span>Filter Leads:</span>
+          </div>
+
+          {/* Service Interest Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 font-medium">Service:</span>
+            <select
+              value={serviceFilter}
+              onChange={(e) => setServiceFilter(e.target.value)}
+              className="px-2.5 py-1 text-xs font-medium border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[220px]"
+            >
+              <option value="all">All Services ({leads.length})</option>
+              {SERVICE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Estimated Value Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 font-medium">Pipeline Value:</span>
+            <select
+              value={valueRangeFilter}
+              onChange={(e) => setValueRangeFilter(e.target.value)}
+              className="px-2.5 py-1 text-xs font-medium border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">All Value Tiers</option>
+              <option value="under50k">&lt; ৳50,000</option>
+              <option value="50k-150k">৳50,000 – ৳150,000</option>
+              <option value="over150k">&gt; ৳150,000</option>
+            </select>
+          </div>
+        </div>
+
+        {/* View mode toggle & reset */}
+        <div className="flex items-center gap-3">
+          {(serviceFilter !== 'all' || valueRangeFilter !== 'all' || searchQuery.trim() !== '') && (
+            <button
+              onClick={() => {
+                setServiceFilter('all');
+                setValueRangeFilter('all');
+                setSearchQuery('');
+              }}
+              className="text-xs text-rose-600 hover:text-rose-800 font-medium underline flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Reset Filters
+            </button>
+          )}
+
+          <div className="flex items-center bg-slate-100 dark:bg-slate-700/60 p-0.5 rounded-lg border border-slate-200 dark:border-slate-600">
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                viewMode === 'kanban'
+                  ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Kanban className="w-3.5 h-3.5" />
+              <span>Kanban</span>
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs font-bold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>List</span>
+            </button>
+          </div>
         </div>
       </div>
 

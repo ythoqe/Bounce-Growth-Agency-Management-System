@@ -10,7 +10,7 @@ interface AdminTopNavProps {
 }
 
 export function AdminTopNav({ onOpenMobileMenu }: AdminTopNavProps) {
-  const { currentRole, switchDevRole, isFirebaseConnected, isLiveAuth, firebaseUser, signInWithGoogle, signOut } = useAuth();
+  const { currentRole, isFirebaseConnected, isLiveAuth, firebaseUser, signInWithGoogle, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -56,33 +56,6 @@ export function AdminTopNav({ onOpenMobileMenu }: AdminTopNavProps) {
           )}
         </div>
 
-        {/* Role Switcher (Enabled when not live authenticated) */}
-        {!isLiveAuth && (
-          <div className="hidden sm:flex items-center p-0.5 bg-slate-100 border border-slate-200 rounded-lg text-[11px]">
-            <span className="px-1.5 text-[10px] text-slate-400 font-mono">ROLE:</span>
-            <button
-              onClick={() => switchDevRole('admin')}
-              className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                currentRole === 'admin'
-                  ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Admin
-            </button>
-            <button
-              onClick={() => switchDevRole('team')}
-              className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                currentRole === 'team'
-                  ? 'bg-white text-slate-900 font-semibold shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Team
-            </button>
-          </div>
-        )}
-
         {/* Notifications */}
         <NotificationDropdown />
 
@@ -91,9 +64,6 @@ export function AdminTopNav({ onOpenMobileMenu }: AdminTopNavProps) {
           variant="outline"
           size="sm"
           onClick={() => {
-            if (!isLiveAuth) {
-              switchDevRole('client');
-            }
             navigate('/portal');
           }}
           icon={<ExternalLink className="w-3.5 h-3.5" />}

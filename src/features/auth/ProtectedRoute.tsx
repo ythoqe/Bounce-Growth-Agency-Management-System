@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { UserRole } from '../../types/user';
 import { LoadingState } from '../../components/common/LoadingState';
-import { ShieldAlert, LogOut, Clock, LogIn, UserCheck } from 'lucide-react';
+import { ShieldAlert, LogOut, Clock } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 
 interface ProtectedRouteProps {
@@ -12,7 +12,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { currentUser, isLoading, currentRole, isLiveAuth, signOut, signInWithGoogle, switchDevRole } = useAuth();
+  const { currentUser, isLoading, currentRole, signOut } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -23,65 +23,13 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  // 1. If not authenticated, render an in-place sign-in card (NEVER navigate to /admin, which causes infinite redirect loops!)
+  // 1. If not authenticated with Firebase Auth, redirect to login page
   if (!currentUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
-        <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-8 text-center shadow-lg">
-          <div className="w-12 h-12 rounded-xl bg-blue-600 text-white font-black text-xl flex items-center justify-center mx-auto mb-4 shadow-sm">
-            BG
-          </div>
-          <h2 className="text-lg font-bold text-slate-900">Bounce Growth Agency Console</h2>
-          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-            Please sign in to access the agency operations dashboard or client portal.
-          </p>
-
-          <div className="mt-6 space-y-3">
-            <Button
-              variant="primary"
-              size="md"
-              className="w-full justify-center"
-              onClick={signInWithGoogle}
-              icon={<LogIn className="w-4 h-4" />}
-            >
-              Sign In with Google
-            </Button>
-
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-400 font-medium">Or continue as demo</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-center text-xs"
-                onClick={() => switchDevRole('admin')}
-              >
-                Agency Admin
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-center text-xs"
-                onClick={() => switchDevRole('client')}
-              >
-                Client Portal
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // 2. Account status approval check for live authenticated users
-  if (isLiveAuth && currentUser.status !== 'active') {
+  // 2. Account status approval check for authenticated users
+  if (currentUser.status !== 'active') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
         <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-6 text-center shadow-xs">
@@ -90,11 +38,11 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
           </div>
           <h2 className="text-base font-bold text-slate-900">Account Awaiting Agency Authorization</h2>
           <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-            Signed in as <strong>{currentUser.email}</strong>. This Google account has not yet been assigned active agency specialist or client portal privileges.
+            Signed in as <strong>{currentUser.email}</strong>. This account has not yet been assigned active agency privileges.
           </p>
           <div className="mt-4 p-3 bg-slate-50 rounded-lg text-[11px] text-slate-500 text-left">
             <p className="font-semibold text-slate-700">Security Rule Verification:</p>
-            <p>Database queries remain completely blocked until an agency administrator verifies this email and assigns an active role.</p>
+            <p>Database queries remain restricted until an agency administrator verifies this email and assigns an active role.</p>
           </div>
           <div className="mt-6 flex items-center justify-center gap-3">
             <Button variant="outline" size="sm" onClick={signOut} icon={<LogOut className="w-3.5 h-3.5" />}>
@@ -107,7 +55,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   }
 
   // 3. If client role, verify clientId is present
-  if (currentRole === 'client' && !currentUser.clientId && isLiveAuth) {
+  if (currentRole === 'client' && !currentUser.clientId) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
         <div className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-6 text-center shadow-xs">
@@ -128,10 +76,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  // 4. Role-based route authorization with strict loop prevention
-  if (allowedRoles && !allowedRoles.includes(currentRole)) {
-    const targetPath = currentRole === 'client' ? '/portal/dashboard' : '/admin';
-    
+  // 4. Role-based route authorization with redirection loop prevention
+  if (allowedRoles && (!currentRole || !allowedRoles.includes(currentRole))) {
+    const targetPath = currentRole === 'client' ? '/portal/dashboard' : '/admin/dashboard';
+
     // Prevent redirecting if already on or within target route family
     if (
       location.pathname === targetPath ||

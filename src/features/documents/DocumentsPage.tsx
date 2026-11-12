@@ -64,6 +64,7 @@ export function DocumentsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'client' | 'internal'>('all');
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('all');
+  const [fileTypeFilter, setFileTypeFilter] = useState<'all' | 'pdf' | 'image' | 'code' | 'archive' | 'other'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   // Modals
@@ -136,6 +137,16 @@ export function DocumentsPage() {
       // Project filter
       if (selectedProjectFilter !== 'all' && f.projectId !== selectedProjectFilter) return false;
 
+      // File type filter
+      if (fileTypeFilter !== 'all') {
+        const ext = f.fileName.split('.').pop()?.toLowerCase() || '';
+        if (fileTypeFilter === 'pdf' && ext !== 'pdf') return false;
+        if (fileTypeFilter === 'image' && !['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'].includes(ext)) return false;
+        if (fileTypeFilter === 'code' && !['json', 'js', 'ts', 'html', 'css', 'sql'].includes(ext)) return false;
+        if (fileTypeFilter === 'archive' && !['zip', 'rar', 'tar', 'gz', '7z'].includes(ext)) return false;
+        if (fileTypeFilter === 'other' && ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'svg', 'gif', 'json', 'js', 'ts', 'html', 'css', 'sql', 'zip', 'rar', 'tar', 'gz', '7z'].includes(ext)) return false;
+      }
+
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -151,7 +162,7 @@ export function DocumentsPage() {
 
       return true;
     });
-  }, [files, activeTab, selectedClientFilter, selectedProjectFilter, searchQuery]);
+  }, [files, activeTab, selectedClientFilter, selectedProjectFilter, fileTypeFilter, searchQuery]);
 
   // Metrics
   const metrics = useMemo(() => {
@@ -345,8 +356,17 @@ export function DocumentsPage() {
               placeholder="Search file name, project, client, or tags..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Selectors */}
@@ -378,6 +398,37 @@ export function DocumentsPage() {
                 </option>
               ))}
             </select>
+
+            {/* File Type Filter */}
+            <select
+              value={fileTypeFilter}
+              onChange={(e) => setFileTypeFilter(e.target.value as any)}
+              className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All File Types</option>
+              <option value="pdf">PDF Documents</option>
+              <option value="image">Images (PNG, JPG, SVG)</option>
+              <option value="code">Code & Config (JSON, JS, SQL)</option>
+              <option value="archive">Archives (ZIP, TAR)</option>
+              <option value="other">Other Files</option>
+            </select>
+
+            {(searchQuery.trim() || selectedClientFilter !== 'all' || selectedProjectFilter !== 'all' || fileTypeFilter !== 'all' || activeTab !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedClientFilter('all');
+                  setSelectedProjectFilter('all');
+                  setFileTypeFilter('all');
+                  setActiveTab('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
@@ -433,20 +484,38 @@ export function DocumentsPage() {
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto">
               <FileText className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900">No Documents Found</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              {files.length === 0 ? 'No Documents Found' : 'No Documents Match Filters'}
+            </h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              {searchQuery || selectedClientFilter !== 'all' || selectedProjectFilter !== 'all'
-                ? 'No documents matched your active search filters. Try clearing or expanding your query.'
+              {searchQuery || selectedClientFilter !== 'all' || selectedProjectFilter !== 'all' || fileTypeFilter !== 'all' || activeTab !== 'all'
+                ? 'No documents matched your active filters. Try clearing or expanding your query.'
                 : 'Upload signed client contracts, GTM container backups, or creative briefs to get started.'}
             </p>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Upload className="w-4 h-4" />}
-              onClick={() => setIsUploadModalOpen(true)}
-            >
-              Upload First Document
-            </Button>
+            {files.length > 0 && (searchQuery || selectedClientFilter !== 'all' || selectedProjectFilter !== 'all' || fileTypeFilter !== 'all' || activeTab !== 'all') ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedClientFilter('all');
+                  setSelectedProjectFilter('all');
+                  setFileTypeFilter('all');
+                  setActiveTab('all');
+                }}
+              >
+                Reset Filters
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Upload className="w-4 h-4" />}
+                onClick={() => setIsUploadModalOpen(true)}
+              >
+                Upload First Document
+              </Button>
+            )}
           </div>
         </Card>
       ) : viewMode === 'grid' ? (

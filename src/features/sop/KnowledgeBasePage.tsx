@@ -62,6 +62,7 @@ export function KnowledgeBasePage() {
   // Filters
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTagFilter, setSelectedTagFilter] = useState('all');
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -111,10 +112,19 @@ export function KnowledgeBasePage() {
     return () => unsubscribe();
   }, []);
 
+  // Unique tags
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    sops.forEach((s) => s.tags?.forEach((t) => t && set.add(t)));
+    return Array.from(set);
+  }, [sops]);
+
   // Filtered SOPs
   const filteredSops = useMemo(() => {
     return sops.filter((sop) => {
       const matchesTab = activeTab === 'all' || sop.category === activeTab;
+      if (!matchesTab) return false;
+      if (selectedTagFilter !== 'all' && !sop.tags?.includes(selectedTagFilter)) return false;
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
@@ -123,9 +133,9 @@ export function KnowledgeBasePage() {
         sop.content.toLowerCase().includes(q) ||
         sop.tags.some((t) => t.toLowerCase().includes(q));
 
-      return matchesTab && matchesSearch;
+      return matchesSearch;
     });
-  }, [sops, activeTab, searchQuery]);
+  }, [sops, activeTab, selectedTagFilter, searchQuery]);
 
   // Tab counts
   const counts = useMemo(() => {
@@ -326,7 +336,7 @@ export function KnowledgeBasePage() {
       )}
 
       {/* Tabs & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="space-y-3">
         <Tabs
           tabs={[
             { id: 'all', label: 'All SOPs', count: counts.all },
@@ -340,14 +350,61 @@ export function KnowledgeBasePage() {
           onChange={setActiveTab}
         />
 
-        <div className="w-full sm:w-72">
-          <Input
-            placeholder="Search SOPs by keyword, tag..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            leftIcon={<Search className="w-4 h-4 text-slate-400" />}
-            autoComplete="off"
-          />
+        <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search SOPs by title, tag, or content..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <Trash2 className="w-3 h-3 hidden" />
+                <span className="text-xs font-bold">×</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {availableTags.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-400 font-medium">Tag:</span>
+                <select
+                  value={selectedTagFilter}
+                  onChange={(e) => setSelectedTagFilter(e.target.value)}
+                  className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Tags</option>
+                  {availableTags.map((tag) => (
+                    <option key={tag} value={tag}>
+                      #{tag}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {(searchQuery.trim() || selectedTagFilter !== 'all' || activeTab !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedTagFilter('all');
+                  setActiveTab('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -358,10 +415,22 @@ export function KnowledgeBasePage() {
         <Card>
           <EmptyState
             icon={<BookOpen className="w-6 h-6 text-slate-400" />}
-            title="No SOPs found in this category"
-            description="Document operational runbooks to ensure tracking consistency and standardize onboarding."
-            actionLabel="Create First SOP"
-            onAction={handleOpenAddModal}
+            title={sops.length === 0 ? "No SOPs found in this category" : "No SOPs match the selected filters"}
+            description={
+              sops.length === 0
+                ? "Document operational runbooks to ensure tracking consistency and standardize onboarding."
+                : "Try resetting your search query or tag filter to view other runbooks."
+            }
+            actionLabel={sops.length === 0 ? "Create First SOP" : "Reset Filters"}
+            onAction={
+              sops.length === 0
+                ? handleOpenAddModal
+                : () => {
+                    setSearchQuery('');
+                    setSelectedTagFilter('all');
+                    setActiveTab('all');
+                  }
+            }
           />
         </Card>
       ) : (

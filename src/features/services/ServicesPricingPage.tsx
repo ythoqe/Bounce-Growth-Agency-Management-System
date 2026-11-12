@@ -11,9 +11,10 @@ import {
   AlertCircle,
   CheckCircle2,
   X,
-  Sparkles,
   Edit2,
   Trash2,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
@@ -50,6 +51,11 @@ export function ServicesPricingPage() {
   const [services, setServices] = useState<AgencyServiceItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filters State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Link Package to Project Modal State
   const [selectedPackageForLink, setSelectedPackageForLink] = useState<ServicePackage | null>(null);
@@ -144,6 +150,60 @@ export function ServicesPricingPage() {
       unsubProjects();
     };
   }, [currentUser, currentRole]);
+
+  // Derived filter collections
+  const categoriesList = useMemo(() => {
+    const set = new Set<string>();
+    packages.forEach((p) => p.category && set.add(p.category));
+    services.forEach((s) => s.category && set.add(s.category));
+    return Array.from(set);
+  }, [packages, services]);
+
+  const filteredPackages = useMemo(() => {
+    return packages.filter((pkg) => {
+      if (categoryFilter !== 'all' && pkg.category !== categoryFilter) return false;
+      if (statusFilter === 'active' && !pkg.isActive) return false;
+      if (statusFilter === 'inactive' && pkg.isActive) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = pkg.name.toLowerCase().includes(q);
+        const matchesDesc = pkg.description?.toLowerCase().includes(q);
+        const matchesCat = pkg.category?.toLowerCase().includes(q);
+        const matchesFeat = pkg.features?.some((f) => f.toLowerCase().includes(q));
+        if (!matchesName && !matchesDesc && !matchesCat && !matchesFeat) return false;
+      }
+      return true;
+    });
+  }, [packages, categoryFilter, statusFilter, searchQuery]);
+
+  const filteredServices = useMemo(() => {
+    return services.filter((srv) => {
+      if (categoryFilter !== 'all' && srv.category !== categoryFilter) return false;
+      if (statusFilter === 'active' && !srv.isActive) return false;
+      if (statusFilter === 'inactive' && srv.isActive) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = srv.name.toLowerCase().includes(q);
+        const matchesDesc = srv.description?.toLowerCase().includes(q);
+        const matchesCat = srv.category?.toLowerCase().includes(q);
+        if (!matchesName && !matchesDesc && !matchesCat) return false;
+      }
+      return true;
+    });
+  }, [services, categoryFilter, statusFilter, searchQuery]);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter((proj) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = proj.name.toLowerCase().includes(q);
+        const matchesClient = proj.clientName?.toLowerCase().includes(q);
+        const matchesPkg = (proj.packageId || (proj as any).packageName || '').toLowerCase().includes(q);
+        if (!matchesName && !matchesClient && !matchesPkg) return false;
+      }
+      return true;
+    });
+  }, [projects, searchQuery]);
 
   // ---------------------------------------------------------------------------
   // Handlers: Toggle Active Status
@@ -538,7 +598,7 @@ export function ServicesPricingPage() {
         <Card>
           <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
             <span>Tiered Agency Packages</span>
-            <Sparkles className="w-4 h-4 text-blue-600" />
+            <Tag className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
@@ -581,12 +641,85 @@ export function ServicesPricingPage() {
         </Card>
       </div>
 
+      {/* Services & Pricing Filters Toolbar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-3">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search packages, services, deliverables..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Category Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="all">All Categories</option>
+                {categoriesList.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active (Offered)</option>
+                <option value="inactive">Inactive (Hidden)</option>
+              </select>
+            </div>
+
+            {(searchQuery.trim() || categoryFilter !== 'all' || statusFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setCategoryFilter('all');
+                  setStatusFilter('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Tabs */}
       <Tabs
         tabs={[
-          { id: 'packages', label: 'Agency Retainer Packages', count: packages.length },
-          { id: 'services', label: 'Individual Services', count: services.length },
-          { id: 'attachments', label: 'Project Attachments', count: projects.length },
+          { id: 'packages', label: 'Agency Retainer Packages', count: filteredPackages.length },
+          { id: 'services', label: 'Individual Services', count: filteredServices.length },
+          { id: 'attachments', label: 'Project Attachments', count: filteredProjects.length },
         ]}
         activeTab={activeTab}
         onChange={setActiveTab}
@@ -608,16 +741,36 @@ export function ServicesPricingPage() {
 
           {loading ? (
             <div className="py-12 text-center text-xs text-slate-400">Loading service packages...</div>
-          ) : packages.length === 0 ? (
+          ) : filteredPackages.length === 0 ? (
             <Card>
               <div className="py-12 text-center space-y-2">
-                <p className="text-sm font-semibold text-slate-700">No service packages created yet.</p>
-                <p className="text-xs text-slate-400">Click &quot;Add Service Package&quot; to build your first BDT rate card.</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {packages.length === 0 ? 'No service packages created yet.' : 'No packages match the selected filters.'}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {packages.length === 0
+                    ? 'Click "Add Service Package" to build your first BDT rate card.'
+                    : 'Try clearing your search or category filter to view all packages.'}
+                </p>
+                {packages.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setCategoryFilter('all');
+                      setStatusFilter('all');
+                    }}
+                    className="mt-2"
+                  >
+                    Clear Filters
+                  </Button>
+                )}
               </div>
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {packages.map((pkg) => {
+              {filteredPackages.map((pkg) => {
                 const linkedProjs = getLinkedProjects(pkg);
 
                 return (
@@ -762,10 +915,30 @@ export function ServicesPricingPage() {
             title="Individual Technical Services"
             subtitle="Granular deliverables available as add-ons or standalone contracts."
           />
-          {services.length === 0 ? (
+          {filteredServices.length === 0 ? (
             <div className="py-12 text-center space-y-2">
-              <p className="text-sm font-semibold text-slate-700">No individual services configured yet.</p>
-              <p className="text-xs text-slate-400">Click &quot;Add Individual Service&quot; to define technical offerings.</p>
+              <p className="text-sm font-semibold text-slate-700">
+                {services.length === 0 ? 'No individual services configured yet.' : 'No services match the selected filters.'}
+              </p>
+              <p className="text-xs text-slate-400">
+                {services.length === 0
+                  ? 'Click "Add Individual Service" to define technical offerings.'
+                  : 'Try clearing your search or category filter.'}
+              </p>
+              {services.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setCategoryFilter('all');
+                    setStatusFilter('all');
+                  }}
+                  className="mt-2"
+                >
+                  Clear Filters
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -780,7 +953,7 @@ export function ServicesPricingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {services.map((srv) => (
+                  {filteredServices.map((srv) => (
                     <tr key={srv.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-slate-900">{srv.name}</p>
@@ -845,74 +1018,92 @@ export function ServicesPricingPage() {
             title="Projects & Assigned Service Packages"
             subtitle="Overview of which service package is linked to each active agency project."
           />
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/75 text-slate-600 font-semibold">
-                  <th className="px-4 py-3">Project</th>
-                  <th className="px-4 py-3">Client</th>
-                  <th className="px-4 py-3">Assigned Package</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {projects.map((proj) => {
-                  const linkedPackage = packages.find(
-                    (p) => p.id === proj.packageId || (p.linkedProjectIds || []).includes(proj.id)
-                  );
+          {filteredProjects.length === 0 ? (
+            <div className="py-12 text-center space-y-2">
+              <p className="text-sm font-semibold text-slate-700">
+                {projects.length === 0 ? 'No agency projects registered yet.' : 'No projects match your search.'}
+              </p>
+              {projects.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSearchQuery('')}
+                  className="mt-2"
+                >
+                  Clear Search
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/75 text-slate-600 font-semibold">
+                    <th className="px-4 py-3">Project</th>
+                    <th className="px-4 py-3">Client</th>
+                    <th className="px-4 py-3">Assigned Package</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {filteredProjects.map((proj) => {
+                    const linkedPackage = packages.find(
+                      (p) => p.id === proj.packageId || (p.linkedProjectIds || []).includes(proj.id)
+                    );
 
-                  return (
-                    <tr key={proj.id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-900">{proj.name}</p>
-                        <p className="text-[11px] text-slate-400 capitalize">{proj.status.replace('_', ' ')}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-slate-800">{proj.clientName}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {linkedPackage ? (
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                              {linkedPackage.name}
-                            </span>
-                            <span className="text-[11px] font-mono text-slate-500">
-                              {linkedPackage.priceRange}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px]">No package attached</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {linkedPackage ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-rose-600 hover:text-rose-700"
-                            onClick={() => handleUnlinkProject(linkedPackage.id, proj.id)}
-                          >
-                            Unlink
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              if (packages.length > 0) handleOpenLinkModal(packages[0]);
-                            }}
-                          >
-                            Assign Package
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    return (
+                      <tr key={proj.id} className="hover:bg-slate-50/60">
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-slate-900">{proj.name}</p>
+                          <p className="text-[11px] text-slate-400 capitalize">{proj.status.replace('_', ' ')}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-slate-800">{proj.clientName}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {linkedPackage ? (
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                                {linkedPackage.name}
+                              </span>
+                              <span className="text-[11px] font-mono text-slate-500">
+                                {linkedPackage.priceRange}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">No package attached</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {linkedPackage ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs text-rose-600 hover:text-rose-700"
+                              onClick={() => handleUnlinkProject(linkedPackage.id, proj.id)}
+                            >
+                              Unlink
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={() => {
+                                if (packages.length > 0) handleOpenLinkModal(packages[0]);
+                              }}
+                            >
+                              Assign Package
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 

@@ -20,6 +20,7 @@ import {
   CreditCard,
   Receipt,
   Users,
+  UserCheck,
   Activity,
   Briefcase,
   ArrowUpRight,
@@ -31,15 +32,21 @@ import {
   AlertCircle,
   Clock,
   ChevronRight,
-  Sparkles,
+  Calendar,
   X,
+  FileDown,
+  Loader2,
+  SlidersHorizontal,
+  Filter,
 } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { EmptyState } from '../../components/common/EmptyState';
 import { LoadingState } from '../../components/common/LoadingState';
+import { Modal } from '../../components/common/Modal';
 import { useAuth } from '../auth/AuthContext';
+import { exportDashboardPdfReport } from '../../services/reports/dashboardPdfService';
 import { ClientProfile } from '../../types/client';
 import { Project } from '../../types/project';
 import { TrackingAsset } from '../../types/asset';
@@ -52,16 +59,16 @@ import {
   subscribePayments,
   subscribeExpenses,
 } from '../../services/financeService';
+import { subscribePendingUsers } from '../../services/users/userService';
+import { UserProfile } from '../../types/user';
 import {
   calculateKPIs,
   calculateMonthlyRevenueVsExpenses,
   calculateLeadConversionStatus,
-  autoSeedInitialFinanceAndLeadsIfEmpty,
   MonthlyFinancialData,
   LeadConversionStatusData,
 } from '../../services/dashboard/dashboardAnalyticsService';
 import { formatCurrency } from '../../utils/formatters';
-import { purgeAllDemoData } from '../../services/admin/cleanupDemoData';
 
 export function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -76,9 +83,23 @@ export function AdminDashboardPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Demo Data Purge State
-  const [isPurgingDemo, setIsPurgingDemo] = useState(false);
-  const [purgeAlert, setPurgeAlert] = useState<string | null>(null);
+  // PDF Export Feature State
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfTitle, setPdfTitle] = useState('Executive Analytics & Performance Report');
+  const [pdfCurrency, setPdfCurrency] = useState<'BDT' | 'USD'>('BDT');
+  const [pdfIncludeKPIs, setPdfIncludeKPIs] = useState(true);
+  const [pdfIncludeMonthly, setPdfIncludeMonthly] = useState(true);
+  const [pdfIncludeClients, setPdfIncludeClients] = useState(true);
+  const [pdfIncludePipeline, setPdfIncludePipeline] = useState(true);
+  const [pdfIncludeAssets, setPdfIncludeAssets] = useState(true);
+  const [pdfNotes, setPdfNotes] = useState('');
+  const [pdfNotification, setPdfNotification] = useState<string | null>(null);
+
+  // Dashboard Filters State
+  const [selectedClientFilter, setSelectedClientFilter] = useState('all');
+  const [dateRangeFilter, setDateRangeFilter] = useState<'all' | '30d' | '90d' | 'ytd'>('all');
+  const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
 
   // Subscriptions
   useEffect(() => {
@@ -128,6 +149,11 @@ export function AdminDashboardPage() {
       (err) => console.warn('[AdminDashboard expenses warning]', err)
     );
 
+    const unsubPending = subscribePendingUsers(
+      (data) => setPendingUsers(data),
+      (err) => console.warn('[AdminDashboard pending users note]', err)
+    );
+
     return () => {
       unsubClients();
       unsubProjects();
@@ -135,34 +161,96 @@ export function AdminDashboardPage() {
       unsubInvoices();
       unsubPayments();
       unsubExpenses();
+      unsubPending();
     };
   }, [currentRole, currentUser]);
 
-  // Real-Time Calculations from Firestore
+  // Filtered collections based on selected client & date range
+  const filteredInvoices = useMemo(() => {
+    let result = invoices;
+    if (selectedClientFilter !== 'all') {
+      result = result.filter((i) => i.clientId === selectedClientFilter);
+    }
+    if (dateRangeFilter !== 'all') {
+      const now = new Date();
+      let cutoff = new Date();
+      if (dateRangeFilter === '30d') cutoff.setDate(now.getDate() - 30);
+      else if (dateRangeFilter === '90d') cutoff.setDate(now.getDate() - 90);
+      else if (dateRangeFilter === 'ytd') cutoff = new Date(now.getFullYear(), 0, 1);
+      result = result.filter((i) => new Date(i.issueDate || i.createdAt) >= cutoff);
+    }
+    return result;
+  }, [invoices, selectedClientFilter, dateRangeFilter]);
+
+  const filteredPayments = useMemo(() => {
+    let result = payments;
+    if (selectedClientFilter !== 'all') {
+      result = result.filter((p) => p.clientId === selectedClientFilter);
+    }
+    if (dateRangeFilter !== 'all') {
+      const now = new Date();
+      let cutoff = new Date();
+      if (dateRangeFilter === '30d') cutoff.setDate(now.getDate() - 30);
+      else if (dateRangeFilter === '90d') cutoff.setDate(now.getDate() - 90);
+      else if (dateRangeFilter === 'ytd') cutoff = new Date(now.getFullYear(), 0, 1);
+      result = result.filter((p) => new Date(p.paymentDate || p.createdAt) >= cutoff);
+    }
+    return result;
+  }, [payments, selectedClientFilter, dateRangeFilter]);
+
+  const filteredExpenses = useMemo(() => {
+    let result = expenses;
+    if (dateRangeFilter !== 'all') {
+      const now = new Date();
+      let cutoff = new Date();
+      if (dateRangeFilter === '30d') cutoff.setDate(now.getDate() - 30);
+      else if (dateRangeFilter === '90d') cutoff.setDate(now.getDate() - 90);
+      else if (dateRangeFilter === 'ytd') cutoff = new Date(now.getFullYear(), 0, 1);
+      result = result.filter((e) => new Date(e.date || e.createdAt) >= cutoff);
+    }
+    return result;
+  }, [expenses, dateRangeFilter]);
+
+  const filteredClients = useMemo(() => {
+    if (selectedClientFilter === 'all') return clients;
+    return clients.filter((c) => c.id === selectedClientFilter);
+  }, [clients, selectedClientFilter]);
+
+  const filteredProjects = useMemo(() => {
+    if (selectedClientFilter === 'all') return projects;
+    return projects.filter((p) => p.clientId === selectedClientFilter);
+  }, [projects, selectedClientFilter]);
+
+  const filteredAssets = useMemo(() => {
+    if (selectedClientFilter === 'all') return assets;
+    return assets.filter((a) => a.clientId === selectedClientFilter);
+  }, [assets, selectedClientFilter]);
+
+  // Real-Time Calculations from Firestore using filtered telemetry
   const kpis = useMemo(() => {
-    return calculateKPIs(payments, invoices, expenses, clients);
-  }, [payments, invoices, expenses, clients]);
+    return calculateKPIs(filteredPayments, filteredInvoices, filteredExpenses, filteredClients);
+  }, [filteredPayments, filteredInvoices, filteredExpenses, filteredClients]);
 
   const monthlyChartData = useMemo(() => {
-    return calculateMonthlyRevenueVsExpenses(payments, expenses, invoices, 6);
-  }, [payments, expenses, invoices]);
+    return calculateMonthlyRevenueVsExpenses(filteredPayments, filteredExpenses, filteredInvoices, 6);
+  }, [filteredPayments, filteredExpenses, filteredInvoices]);
 
   const leadConversion = useMemo(() => {
-    return calculateLeadConversionStatus(clients);
-  }, [clients]);
+    return calculateLeadConversionStatus(filteredClients);
+  }, [filteredClients]);
 
   // Operational metrics
   const activeClients = useMemo(
-    () => clients.filter((c) => c.status === 'active' || c.status === 'onboarding'),
-    [clients]
+    () => filteredClients.filter((c) => c.status === 'active' || c.status === 'onboarding'),
+    [filteredClients]
   );
   const activeProjects = useMemo(
-    () => projects.filter((p) => p.status !== 'completed' && p.status !== 'archived'),
-    [projects]
+    () => filteredProjects.filter((p) => p.status !== 'completed' && p.status !== 'archived'),
+    [filteredProjects]
   );
   const activeAssets = useMemo(
-    () => assets.filter((a) => a.status !== 'archived'),
-    [assets]
+    () => filteredAssets.filter((a) => a.status !== 'archived'),
+    [filteredAssets]
   );
 
   // Custom Tooltip for Bar Chart
@@ -210,18 +298,82 @@ export function AdminDashboardPage() {
     return null;
   };
 
-  const handlePurgeDemoData = async () => {
-    if (isPurgingDemo) return;
-    setIsPurgingDemo(true);
-    setPurgeAlert(null);
+  const handleQuickExportPdf = async () => {
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    setPdfNotification(null);
     try {
-      const res = await purgeAllDemoData();
-      setPurgeAlert(res.message);
-      setTimeout(() => setPurgeAlert(null), 5000);
+      await exportDashboardPdfReport(
+        {
+          kpis,
+          monthlyChartData,
+          leadConversion,
+          clients: filteredClients,
+          projects: filteredProjects,
+          assets: filteredAssets,
+          invoices: filteredInvoices,
+          payments: filteredPayments,
+          expenses: filteredExpenses,
+        },
+        {
+          reportTitle: 'Executive Analytics & Performance Report',
+          currency: 'BDT',
+          includeKPIs: true,
+          includeMonthlyTrend: true,
+          includeClientRoster: true,
+          includeLeadFunnel: true,
+          includeTrackingAssets: true,
+          generatedByName: currentUser?.displayName || 'Agency Principal',
+          generatedByEmail: currentUser?.email || 'founder@bouncegrowth.com',
+        }
+      );
+      setPdfNotification('Executive PDF report generated and downloaded successfully!');
+      setTimeout(() => setPdfNotification(null), 5000);
     } catch (err: any) {
-      setPurgeAlert(`Purge failed: ${err.message}`);
+      console.error('Quick PDF export error:', err);
+      setPdfNotification(`PDF Generation failed: ${err.message || 'Unknown error'}`);
     } finally {
-      setIsPurgingDemo(false);
+      setIsExportingPdf(false);
+    }
+  };
+
+  const handleCustomExportPdf = async () => {
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      await exportDashboardPdfReport(
+        {
+          kpis,
+          monthlyChartData,
+          leadConversion,
+          clients: filteredClients,
+          projects: filteredProjects,
+          assets: filteredAssets,
+          invoices: filteredInvoices,
+          payments: filteredPayments,
+          expenses: filteredExpenses,
+        },
+        {
+          reportTitle: pdfTitle.trim() || 'Executive Analytics & Performance Report',
+          currency: pdfCurrency,
+          notes: pdfNotes.trim(),
+          includeKPIs: pdfIncludeKPIs,
+          includeMonthlyTrend: pdfIncludeMonthly,
+          includeClientRoster: pdfIncludeClients,
+          includeLeadFunnel: pdfIncludePipeline,
+          includeTrackingAssets: pdfIncludeAssets,
+          generatedByName: currentUser?.displayName || 'Agency Principal',
+          generatedByEmail: currentUser?.email || 'founder@bouncegrowth.com',
+        }
+      );
+      setIsPdfModalOpen(false);
+      setPdfNotification('Custom Executive PDF report downloaded successfully!');
+      setTimeout(() => setPdfNotification(null), 5000);
+    } catch (err: any) {
+      console.error('Custom PDF export error:', err);
+      setPdfNotification(`PDF Generation failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -232,11 +384,27 @@ export function AdminDashboardPage() {
         title="Agency Executive Dashboard"
         description="Real-time financial performance, revenue receivables, cashflow margins, and lead conversion telemetry streamed from Cloud Firestore."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              icon={<Receipt className="w-3.5 h-3.5 text-blue-600" />}
+              icon={
+                isExportingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5 text-blue-600" />
+                )
+              }
+              onClick={() => setIsPdfModalOpen(true)}
+              disabled={isExportingPdf}
+              className="border-blue-200 text-blue-700 hover:bg-blue-50"
+            >
+              {isExportingPdf ? 'Generating PDF...' : 'Export PDF Report'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Receipt className="w-3.5 h-3.5 text-slate-600" />}
               onClick={() => navigate('/finance/invoices')}
             >
               Manage Invoices
@@ -265,45 +433,154 @@ export function AdminDashboardPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePurgeDemoData}
-            disabled={isPurgingDemo}
-            className="text-xs h-7 text-rose-700 border-rose-200 hover:bg-rose-50"
-          >
-            {isPurgingDemo ? 'Purging Demo Data...' : 'Purge All Demo Data'}
-          </Button>
           <span className="font-mono text-emerald-800 font-semibold bg-white/80 px-2 py-0.5 rounded border border-emerald-200">
             Project: {firebaseStatus.projectId}
           </span>
         </div>
       </div>
 
-      {purgeAlert && (
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center justify-between">
+      {pdfNotification && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
-            <span>{purgeAlert}</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{pdfNotification}</span>
           </div>
-          <button onClick={() => setPurgeAlert(null)} className="text-blue-600 hover:text-blue-800">
+          <button onClick={() => setPdfNotification(null)} className="text-emerald-700 hover:text-emerald-950">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
+      {pendingUsers.length > 0 && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs font-bold text-lg">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-amber-950">
+                  {pendingUsers.length} Client {pendingUsers.length === 1 ? 'Representative' : 'Representatives'} Awaiting Approval
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 text-[10px] font-bold">
+                  Action Required
+                </span>
+              </div>
+              <p className="text-xs text-amber-800 mt-0.5">
+                New contacts signed in via Google and need organization assignment to access their portal.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => navigate('/admin/clients')}
+            className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 font-semibold cursor-pointer"
+            icon={<CheckCircle2 className="w-4 h-4" />}
+          >
+            Review & 1-Click Approve ({pendingUsers.length})
+          </Button>
+        </div>
+      )}
+
+      {/* Dashboard Filter Bar */}
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 font-bold text-slate-700">
+            <Filter className="w-3.5 h-3.5 text-blue-600" />
+            <span>Dashboard Filter:</span>
+          </div>
+
+          {/* Client Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 font-medium">Client:</span>
+            <select
+              value={selectedClientFilter}
+              onChange={(e) => setSelectedClientFilter(e.target.value)}
+              className="px-2.5 py-1 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[200px]"
+            >
+              <option value="all">All Clients ({clients.length})</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.businessName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Date Range Filter Pills */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+            {(
+              [
+                { id: 'all', label: 'All Time' },
+                { id: '30d', label: 'Last 30 Days' },
+                { id: '90d', label: 'Last 90 Days' },
+                { id: 'ytd', label: 'YTD (This Year)' },
+              ] as const
+            ).map((rng) => (
+              <button
+                key={rng.id}
+                type="button"
+                onClick={() => setDateRangeFilter(rng.id)}
+                className={`px-2.5 py-0.5 rounded-md text-xs font-medium transition-all ${
+                  dateRangeFilter === rng.id
+                    ? 'bg-white text-blue-600 font-bold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {rng.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Clear Filter button if filters active */}
+        {(selectedClientFilter !== 'all' || dateRangeFilter !== 'all') && (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+              Filtered View Active
+            </span>
+            <button
+              onClick={() => {
+                setSelectedClientFilter('all');
+                setDateRangeFilter('all');
+              }}
+              className="text-xs text-rose-600 hover:text-rose-800 font-medium underline flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Reset Filters
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* --------------------------------------------------------------------- */}
       {/* 1. MANDATORY FINANCIAL KPI SECTION                                   */}
       {/* --------------------------------------------------------------------- */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-emerald-600" />
             Financial Key Performance Indicators (BDT ৳ Live)
           </h2>
-          <span className="text-xs text-slate-500 font-mono">
-            Collection Rate: <strong className="text-slate-900">{kpis.collectionRate}%</strong>
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500 font-mono">
+              Collection Rate: <strong className="text-slate-900">{kpis.collectionRate}%</strong>
+            </span>
+            <button
+              onClick={handleQuickExportPdf}
+              disabled={isExportingPdf}
+              title="Instantly generate and download Executive PDF Report"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors shadow-2xs"
+            >
+              {isExportingPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+              ) : (
+                <FileDown className="w-3.5 h-3.5 text-blue-600" />
+              )}
+              <span>Quick PDF Report</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -800,7 +1077,7 @@ export function AdminDashboardPage() {
               >
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-md">
-                    <Sparkles className="w-4 h-4" />
+                    <Calendar className="w-4 h-4" />
                   </div>
                   <div>
                     <span className="font-bold text-slate-900 block group-hover:text-emerald-700">
@@ -838,6 +1115,217 @@ export function AdminDashboardPage() {
           </Card>
         </div>
       </div>
+
+      {/* Export Executive PDF Report Modal */}
+      <Modal
+        isOpen={isPdfModalOpen}
+        onClose={() => !isExportingPdf && setIsPdfModalOpen(false)}
+        title="Export Executive Analytics & Performance PDF"
+        description="Generate a formatted, publication-ready PDF audit containing live agency KPIs, financial trends, retainer rosters, and tracking infrastructure telemetry."
+        maxWidth="lg"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-slate-500">
+              Generated via <strong className="text-slate-700">jsPDF engine</strong> • Synchronized with live Firestore
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPdfModalOpen(false)}
+                disabled={isExportingPdf}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={
+                  isExportingPdf ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <FileDown className="w-3.5 h-3.5" />
+                  )
+                }
+                onClick={handleCustomExportPdf}
+                disabled={isExportingPdf}
+              >
+                {isExportingPdf ? 'Compiling PDF...' : 'Download PDF Report'}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="space-y-5 text-xs text-slate-700">
+          {/* Report Title */}
+          <div>
+            <label className="block font-semibold text-slate-900 mb-1">
+              Document Header Title
+            </label>
+            <input
+              type="text"
+              value={pdfTitle}
+              onChange={(e) => setPdfTitle(e.target.value)}
+              placeholder="e.g. Executive Analytics & Performance Report"
+              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+            />
+          </div>
+
+          {/* Currency Format */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block font-semibold text-slate-900 mb-1">
+                Display Currency
+              </label>
+              <select
+                value={pdfCurrency}
+                onChange={(e) => setPdfCurrency(e.target.value as 'BDT' | 'USD')}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="BDT">BDT (৳ - Bangladeshi Taka)</option>
+                <option value="USD">USD ($ - US Dollars)</option>
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Values will be formatted cleanly as official currency denominations.
+              </p>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-900 mb-1">
+                Report Confidentiality & Signatory
+              </label>
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                <p className="font-semibold text-slate-800">
+                  {currentUser?.displayName || 'Agency Principal'}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {currentUser?.email || 'founder@bouncegrowth.com'} • Verified Audit
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Section Inclusion Checkboxes */}
+          <div>
+            <label className="block font-semibold text-slate-900 mb-2">
+              Select Analytics Modules to Include
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pdfIncludeKPIs}
+                  onChange={(e) => setPdfIncludeKPIs(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 block">
+                    Financial KPI Scorecard
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Gross Cash, Receivables, Operating Burn, Net Profit
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pdfIncludeMonthly}
+                  onChange={(e) => setPdfIncludeMonthly(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 block">
+                    6-Month Financial Trend Table
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Monthly Cash Inflow vs Expenses & Operating Margins
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pdfIncludeClients}
+                  onChange={(e) => setPdfIncludeClients(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 block">
+                    Client Retainer Roster ({clients.length})
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Retainer tier, industry, subscribed tracking services
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pdfIncludePipeline}
+                  onChange={(e) => setPdfIncludePipeline(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 block">
+                    CRM Pipeline & Conversion Funnel
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Win rate %, lead status breakdown, active projects
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={pdfIncludeAssets}
+                  onChange={(e) => setPdfIncludeAssets(e.target.checked)}
+                  className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-900 block">
+                    Server-Side Tracking & Asset Infrastructure ({assets.length})
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Meta CAPI, Google Tag Manager server containers, and GA4 telemetry health
+                  </span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Executive Remarks / Notes */}
+          <div>
+            <label className="block font-semibold text-slate-900 mb-1">
+              Executive Brief / Auditor Remarks (Optional)
+            </label>
+            <textarea
+              rows={3}
+              value={pdfNotes}
+              onChange={(e) => setPdfNotes(e.target.value)}
+              placeholder="Add contextual remarks, agency milestones, or strategic commentary to appear at the top of the report..."
+              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Format preview tag */}
+          <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center gap-3">
+            <div className="p-2 bg-blue-100 text-blue-700 rounded-lg shrink-0">
+              <FileDown className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-semibold text-blue-950">Publication-Ready Document Layout</p>
+              <p className="text-[11px] text-blue-800">
+                A4 portrait format with multi-page automatic pagination, running headers, confidentiality disclaimers, and agency attestation signature blocks.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

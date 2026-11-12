@@ -127,7 +127,7 @@ export const DEFAULT_INDIVIDUAL_SERVICES: Array<Omit<AgencyServiceItem, 'id' | '
 ];
 
 /**
- * Real-time subscription to service packages with auto-seeding
+ * Real-time subscription to service packages
  */
 export function subscribePackages(
   callback: (packages: ServicePackage[]) => void,

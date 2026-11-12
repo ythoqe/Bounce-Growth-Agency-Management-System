@@ -211,11 +211,3 @@ export function calculateLeadConversionStatus(clients: ClientProfile[]): {
     conversionRate,
   };
 }
-
-/**
- * Auto-seed initial realistic financial and lead records (Permanently turned off per user request)
- */
-export async function autoSeedInitialFinanceAndLeadsIfEmpty(): Promise<void> {
-  // Autofill and demo seeding permanently disabled.
-  return;
-}

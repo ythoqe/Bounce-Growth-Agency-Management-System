@@ -12,12 +12,12 @@ import {
   X,
   Edit2,
   Trash2,
-  Sparkles,
   Layers,
   UserCheck,
   UserX,
   Code,
   TrendingUp,
+  RotateCcw,
 } from 'lucide-react';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
@@ -33,6 +33,7 @@ import {
   createTeamMember,
   updateTeamMember,
   deleteTeamMember,
+  syncAllTeamMembersWithUsers,
 } from '../../services/team/teamService';
 import { subscribeClients } from '../../services/clients/clientService';
 
@@ -55,6 +56,9 @@ export function TeamPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'team'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'invited' | 'suspended'>('all');
+  const [clientFilter, setClientFilter] = useState('all');
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -77,6 +81,7 @@ export function TeamPage() {
   // Status feedback
   const [alertSuccess, setAlertSuccess] = useState<string | null>(null);
   const [alertError, setAlertError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Subscriptions
   useEffect(() => {
@@ -86,6 +91,15 @@ export function TeamPage() {
     }
 
     setLoading(true);
+
+    // Automatically sync team specialist accounts with any registered auth users
+    if (currentUser?.role === 'admin' || currentRole === 'admin') {
+      syncAllTeamMembersWithUsers({
+        uid: currentUser.id,
+        email: currentUser.email,
+        role: 'admin',
+      }).catch((e) => console.warn('[TeamPage] Auto-sync notice:', e));
+    }
 
     const unsubTeam = subscribeTeamMembers(
       (data) => {
@@ -117,20 +131,32 @@ export function TeamPage() {
       if (deptFilter !== 'all' && member.department !== deptFilter) {
         return false;
       }
+      // Role filter
+      if (roleFilter !== 'all' && member.role !== roleFilter) {
+        return false;
+      }
+      // Status filter
+      if (statusFilter !== 'all' && member.status !== statusFilter) {
+        return false;
+      }
+      // Client assignment filter
+      if (clientFilter !== 'all' && !(member.assignedClients || []).includes(clientFilter)) {
+        return false;
+      }
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = member.name.toLowerCase().includes(q);
         const matchesEmail = member.email.toLowerCase().includes(q);
         const matchesTitle = member.title.toLowerCase().includes(q);
-        const matchesSkills = member.skills.some((s) => s.toLowerCase().includes(q));
+        const matchesSkills = member.skills?.some((s) => s.toLowerCase().includes(q));
         if (!matchesName && !matchesEmail && !matchesTitle && !matchesSkills) {
           return false;
         }
       }
       return true;
     });
-  }, [members, deptFilter, searchQuery]);
+  }, [members, deptFilter, roleFilter, statusFilter, clientFilter, searchQuery]);
 
   // KPI Metrics
   const metrics = useMemo(() => {
@@ -343,6 +369,28 @@ export function TeamPage() {
     }
   };
 
+  const handleSyncAccounts = async () => {
+    if (!currentUser) return;
+    try {
+      setIsSyncing(true);
+      const count = await syncAllTeamMembersWithUsers({
+        uid: currentUser.id,
+        email: currentUser.email,
+        role: currentRole || 'admin',
+      });
+      setAlertSuccess(
+        count > 0
+          ? `Successfully synchronized and activated ${count} specialist account(s)!`
+          : 'All team specialist accounts are already synchronized and active in Cloud Firestore.'
+      );
+      setTimeout(() => setAlertSuccess(null), 5000);
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to sync specialist accounts.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -350,14 +398,26 @@ export function TeamPage() {
         title="Agency Team & Specialist Roster"
         description="Manage Bounce Growth tracking engineers, media buyers, and managers. Assign clients and projects with granular access controls."
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus className="w-3.5 h-3.5" />}
-            onClick={handleOpenAddModal}
-          >
-            Add Team Specialist
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<RotateCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />}
+              onClick={handleSyncAccounts}
+              loading={isSyncing}
+              className="text-xs"
+            >
+              Sync Specialist Accounts
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus className="w-3.5 h-3.5" />}
+              onClick={handleOpenAddModal}
+            >
+              Add Team Specialist
+            </Button>
+          </div>
         }
       />
 
@@ -391,7 +451,7 @@ export function TeamPage() {
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              Google sign-in as <strong>founder@bouncegrowth.agency</strong> required to manage team permissions in Firestore.
+              Google sign-in as <strong>hmmojjammalhoq@gmail.com</strong> (or an authorized admin) required to manage team permissions in Firestore.
             </span>
           </div>
           <button
@@ -451,33 +511,108 @@ export function TeamPage() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative flex-1 w-full max-w-md">
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Search specialists by name, email, title, or skills..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Department:</span>
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Departments</option>
-              {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Department */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Dept:</span>
+              <select
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+                className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Departments</option>
+                {DEPARTMENTS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Role */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Role:</span>
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as any)}
+                className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Roles</option>
+                <option value="admin">Admin / Founder</option>
+                <option value="team">Team Specialist</option>
+              </select>
+            </div>
+
+            {/* Status */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="invited">Pending / Invited</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+
+            {/* Client Assignment */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Client:</span>
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="text-xs bg-white border border-slate-200 text-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Clients</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(searchQuery.trim() || deptFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all' || clientFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDeptFilter('all');
+                  setRoleFilter('all');
+                  setStatusFilter('all');
+                  setClientFilter('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -493,20 +628,38 @@ export function TeamPage() {
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto">
               <UserCheck className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900">No Specialists Found</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              {members.length === 0 ? 'No Specialists Found' : 'No Specialists Match Filters'}
+            </h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              {searchQuery || deptFilter !== 'all'
-                ? 'No specialists matched your filter criteria. Try clearing search filters.'
+              {searchQuery || deptFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all' || clientFilter !== 'all'
+                ? 'No specialists matched your filter criteria. Try resetting filters to see the full roster.'
                 : 'Build your agency roster by adding your first tracking engineer or media buyer.'}
             </p>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus className="w-4 h-4" />}
-              onClick={handleOpenAddModal}
-            >
-              Add First Specialist
-            </Button>
+            {members.length > 0 && (searchQuery || deptFilter !== 'all' || roleFilter !== 'all' || statusFilter !== 'all' || clientFilter !== 'all') ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDeptFilter('all');
+                  setRoleFilter('all');
+                  setStatusFilter('all');
+                  setClientFilter('all');
+                }}
+              >
+                Reset Filters
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
+                onClick={handleOpenAddModal}
+              >
+                Add First Specialist
+              </Button>
+            )}
           </div>
         </Card>
       ) : (

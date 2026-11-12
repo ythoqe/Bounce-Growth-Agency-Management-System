@@ -79,7 +79,7 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.keys().hasAll(['id', 'email', 'displayName', 'role', 'status']) &&
-        data.id is string && data.id == request.auth.uid &&
+        data.id is string && (data.id == request.auth.uid || isAdmin()) &&
         data.email is string && data.email.size() <= 120 &&
         data.displayName is string && data.displayName.size() <= 100 &&
         data.role in ['admin', 'team', 'client'] &&
@@ -253,7 +253,8 @@ service cloud.firestore {
         isValidUser(incoming());
       allow update: if isValidId(userId) && isSignedIn() && isValidUser(incoming()) && (
         isAdmin() ||
-        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'title', 'skills', 'updatedAt']))
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'title', 'skills', 'updatedAt'])) ||
+        (request.auth.uid == userId && incoming().role in ['team'] && incoming().status == 'active')
       );
       allow delete: if isAdmin() && isValidId(userId);
     }

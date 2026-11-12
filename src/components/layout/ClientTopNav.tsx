@@ -10,7 +10,7 @@ interface ClientTopNavProps {
 }
 
 export function ClientTopNav({ onOpenMobileMenu }: ClientTopNavProps) {
-  const { switchDevRole, isLiveAuth, signOut, currentUser } = useAuth();
+  const { signOut, currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -19,6 +19,8 @@ export function ClientTopNav({ onOpenMobileMenu }: ClientTopNavProps) {
     .split('-')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+
+  const isAdminOrTeam = currentUser?.role === 'admin' || currentUser?.role === 'team';
 
   return (
     <header className="h-16 px-4 sm:px-6 bg-white border-b border-slate-200/90 flex items-center justify-between gap-4 sticky top-0 z-30">
@@ -33,7 +35,7 @@ export function ClientTopNav({ onOpenMobileMenu }: ClientTopNavProps) {
         </button>
 
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs">
-          <span className="font-semibold text-slate-900">{currentUser?.displayName || 'Apex Retail BD'}</span>
+          <span className="font-semibold text-slate-900">{currentUser?.displayName || 'Client Portal'}</span>
           <span className="text-slate-400" aria-hidden="true">
             /
           </span>
@@ -41,7 +43,7 @@ export function ClientTopNav({ onOpenMobileMenu }: ClientTopNavProps) {
         </nav>
       </div>
 
-      {/* Right zone: Notifications + Switch back to Admin Console button & Security badge */}
+      {/* Right zone: Notifications + Admin Link + Logout */}
       <div className="flex items-center gap-2.5">
         <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 font-medium">
           <Shield className="w-3.5 h-3.5 text-blue-600" />
@@ -50,32 +52,29 @@ export function ClientTopNav({ onOpenMobileMenu }: ClientTopNavProps) {
 
         <NotificationDropdown />
 
-        {!isLiveAuth && (
+        {isAdminOrTeam && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
-              switchDevRole('admin');
-              navigate('/admin');
+              navigate('/admin/dashboard');
             }}
             icon={<ArrowLeft className="w-3.5 h-3.5" />}
             className="text-xs"
           >
-            Return to Admin
+            Admin Console
           </Button>
         )}
 
-        {isLiveAuth && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={signOut}
-            icon={<LogOut className="w-3.5 h-3.5" />}
-            className="text-xs text-slate-600"
-          >
-            Logout
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={signOut}
+          icon={<LogOut className="w-3.5 h-3.5" />}
+          className="text-xs text-slate-600 cursor-pointer"
+        >
+          Logout
+        </Button>
       </div>
     </header>
   );

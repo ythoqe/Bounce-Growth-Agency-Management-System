@@ -2,6 +2,8 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthContext';
 import { ProtectedRoute } from '../features/auth/ProtectedRoute';
+import { LoginPage } from '../features/auth/LoginPage';
+import { LoadingState } from '../components/common/LoadingState';
 
 // Admin Layout & Pages
 import { AdminLayout } from '../components/layout/AdminLayout';
@@ -32,17 +34,36 @@ import { ClientDocumentsPage } from '../features/client-portal/ClientDocumentsPa
 import { ClientSupportPage } from '../features/client-portal/ClientSupportPage';
 
 function RootRedirect() {
-  const { currentRole } = useAuth();
+  const { currentUser, currentRole, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <LoadingState message="Checking authentication..." />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
   if (currentRole === 'client') {
     return <Navigate to="/portal/dashboard" replace />;
   }
-  return <Navigate to="/admin" replace />;
+
+  if (currentRole === 'admin' || currentRole === 'team') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  return <Navigate to="/login" replace />;
 }
 
 export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
+      <Route path="/login" element={<LoginPage />} />
 
       {/* Admin & Team Member Routes */}
       <Route
@@ -54,6 +75,7 @@ export function AppRoutes() {
         }
       >
         <Route index element={<AdminDashboardPage />} />
+        <Route path="dashboard" element={<AdminDashboardPage />} />
         <Route path="crm" element={<CrmPage />} />
         <Route path="clients" element={<ClientsPage />} />
         <Route path="projects" element={<ProjectsPage />} />
@@ -71,7 +93,7 @@ export function AppRoutes() {
         <Route path="settings" element={<SettingsPage />} />
       </Route>
 
-      {/* Direct /marketing/content route requested by user */}
+      {/* Direct /marketing/content route */}
       <Route
         path="/marketing/content"
         element={
@@ -83,7 +105,7 @@ export function AppRoutes() {
         <Route index element={<ContentCalendarPage />} />
       </Route>
 
-      {/* Direct /finance/invoices route requested by user */}
+      {/* Direct /finance/invoices route */}
       <Route
         path="/finance/invoices"
         element={

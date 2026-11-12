@@ -25,8 +25,9 @@ import {
   CheckCircle2,
   Clock,
   Info,
-  AlertCircle,
   Trash2,
+  Filter,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Project, ProjectStatus, ProjectPriority } from '../../types/project';
@@ -68,6 +69,8 @@ export function ProjectsPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClientFilter, setSelectedClientFilter] = useState('all');
+  const [selectedPriorityFilter, setSelectedPriorityFilter] = useState('all');
+  const [selectedServiceFilter, setSelectedServiceFilter] = useState('all');
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -285,6 +288,13 @@ export function ProjectsPage() {
     if (activeTab === 'all' && p.status === 'archived') return false;
 
     if (selectedClientFilter !== 'all' && p.clientId !== selectedClientFilter) return false;
+    if (selectedPriorityFilter !== 'all' && p.priority !== selectedPriorityFilter) return false;
+    if (
+      selectedServiceFilter !== 'all' &&
+      (!p.services || !p.services.includes(selectedServiceFilter as ServiceCategory))
+    ) {
+      return false;
+    }
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -473,29 +483,88 @@ export function ProjectsPage() {
           onChange={setActiveTab}
         />
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="w-full sm:w-64">
+          <Input
+            placeholder="Search projects by name, description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            leftIcon={<Search className="w-4 h-4 text-slate-400" />}
+          />
+        </div>
+      </div>
+
+      {/* Filter Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs text-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+            <Filter className="w-3.5 h-3.5 text-blue-600" />
+            <span>Filter Projects:</span>
+          </div>
+
+          {/* Client Filter */}
           {clients.length > 0 && (
-            <select
-              value={selectedClientFilter}
-              onChange={(e) => setSelectedClientFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg text-xs py-2 px-2.5 text-slate-700"
-            >
-              <option value="all">All Clients ({clients.length})</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.businessName}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 font-medium">Client:</span>
+              <select
+                value={selectedClientFilter}
+                onChange={(e) => setSelectedClientFilter(e.target.value)}
+                className="bg-white border border-slate-300 rounded-lg text-xs py-1 px-2.5 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[180px]"
+              >
+                <option value="all">All Clients ({clients.length})</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{c.businessName}</option>
+                ))}
+              </select>
+            </div>
           )}
 
-          <div className="w-full sm:w-60">
-            <Input
-              placeholder="Search projects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              leftIcon={<Search className="w-4 h-4 text-slate-400" />}
-            />
+          {/* Priority Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 font-medium">Priority:</span>
+            <select
+              value={selectedPriorityFilter}
+              onChange={(e) => setSelectedPriorityFilter(e.target.value)}
+              className="bg-white border border-slate-300 rounded-lg text-xs py-1 px-2.5 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">All Priorities</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+
+          {/* Service Filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 font-medium">Service:</span>
+            <select
+              value={selectedServiceFilter}
+              onChange={(e) => setSelectedServiceFilter(e.target.value)}
+              className="bg-white border border-slate-300 rounded-lg text-xs py-1 px-2.5 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[190px]"
+            >
+              <option value="all">All Services</option>
+              {ALL_SERVICES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
           </div>
         </div>
+
+        {/* Reset Filter Button */}
+        {(selectedClientFilter !== 'all' || selectedPriorityFilter !== 'all' || selectedServiceFilter !== 'all' || searchQuery.trim() !== '') && (
+          <button
+            onClick={() => {
+              setSelectedClientFilter('all');
+              setSelectedPriorityFilter('all');
+              setSelectedServiceFilter('all');
+              setSearchQuery('');
+            }}
+            className="text-xs text-rose-600 hover:text-rose-800 font-medium underline flex items-center gap-1"
+          >
+            <X className="w-3 h-3" />
+            Reset Filters
+          </button>
+        )}
       </div>
 
       {isLoading ? (

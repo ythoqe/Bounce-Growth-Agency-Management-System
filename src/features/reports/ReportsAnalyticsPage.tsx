@@ -13,12 +13,14 @@ import {
   Trash2,
   Calendar,
   Layers,
-  Sparkles,
   TrendingUp,
   FileText,
   Clock,
   Eye,
+  FileDown,
+  Loader2,
 } from 'lucide-react';
+import { exportDeliverablesPdfReport } from '../../services/reports/dashboardPdfService';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Card, CardHeader } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
@@ -57,6 +59,8 @@ export function ReportsAnalyticsPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [clientFilter, setClientFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<DeliverableStatus | 'all'>('all');
 
   // Modals state
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
@@ -83,6 +87,29 @@ export function ReportsAnalyticsPage() {
   // Feedback notifications
   const [alertSuccess, setAlertSuccess] = useState<string | null>(null);
   const [alertError, setAlertError] = useState<string | null>(null);
+
+  // PDF Export State
+  const [isExportingDeliverablesPdf, setIsExportingDeliverablesPdf] = useState(false);
+
+  const handleExportDeliverablesPdf = async () => {
+    if (isExportingDeliverablesPdf) return;
+    setIsExportingDeliverablesPdf(true);
+    try {
+      await exportDeliverablesPdfReport({
+        deliverables: filteredReports,
+        clients,
+        projects,
+        generatedByName: currentUser?.displayName || 'Agency Principal',
+      });
+      setAlertSuccess('Deliverables & Audit manifest exported as PDF successfully.');
+      setTimeout(() => setAlertSuccess(null), 4000);
+    } catch (err: any) {
+      console.error('Export deliverables error:', err);
+      setAlertError(err.message || 'Failed to export PDF.');
+    } finally {
+      setIsExportingDeliverablesPdf(false);
+    }
+  };
 
   // Subscriptions
   useEffect(() => {
@@ -155,6 +182,16 @@ export function ReportsAnalyticsPage() {
         return false;
       }
 
+      // Project filter
+      if (projectFilter !== 'all' && report.projectId !== projectFilter) {
+        return false;
+      }
+
+      // Status filter
+      if (statusFilter !== 'all' && report.status !== statusFilter) {
+        return false;
+      }
+
       // Tab filter
       if (activeTab === 'monthly') {
         const titleLower = report.title.toLowerCase();
@@ -188,7 +225,7 @@ export function ReportsAnalyticsPage() {
 
       return true;
     });
-  }, [deliverables, clientFilter, activeTab, searchQuery]);
+  }, [deliverables, clientFilter, projectFilter, statusFilter, activeTab, searchQuery]);
 
   // Metrics
   const metrics = useMemo(() => {
@@ -492,14 +529,32 @@ export function ReportsAnalyticsPage() {
         title="Performance Reports & Looker Studio Hub"
         description="Deliverable client analytics, monthly attribution audits, ROAS tracking, and embeddable Looker Studio dashboards."
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus className="w-3.5 h-3.5" />}
-            onClick={handleOpenPublishModal}
-          >
-            Publish New Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              icon={
+                isExportingDeliverablesPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                ) : (
+                  <FileDown className="w-3.5 h-3.5 text-blue-600" />
+                )
+              }
+              onClick={handleExportDeliverablesPdf}
+              disabled={isExportingDeliverablesPdf}
+              className="border-blue-200 text-blue-700 hover:bg-blue-50"
+            >
+              {isExportingDeliverablesPdf ? 'Compiling PDF...' : 'Export Deliverables PDF'}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus className="w-3.5 h-3.5" />}
+              onClick={handleOpenPublishModal}
+            >
+              Publish New Report
+            </Button>
+          </div>
         }
       />
 
@@ -598,32 +653,94 @@ export function ReportsAnalyticsPage() {
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="relative flex-1 w-full max-w-md">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="Search reports by title, findings, client, or project..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Briefcase className="w-4 h-4 text-slate-400" />
-            <select
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-              className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Client Organizations</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.businessName}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Client Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <Briefcase className="w-4 h-4 text-slate-400" />
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Clients</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Project Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Project:</span>
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Projects</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="submitted">Submitted</option>
+                <option value="under_review">Under Review</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Revision Requested</option>
+              </select>
+            </div>
+
+            {(searchQuery.trim() || clientFilter !== 'all' || projectFilter !== 'all' || statusFilter !== 'all' || activeTab !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setClientFilter('all');
+                  setProjectFilter('all');
+                  setStatusFilter('all');
+                  setActiveTab('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -642,20 +759,38 @@ export function ReportsAnalyticsPage() {
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto">
               <BarChart3 className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900">No Performance Reports Found</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              {deliverables.length === 0 ? 'No Performance Reports Found' : 'No Reports Match Filters'}
+            </h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              {searchQuery || clientFilter !== 'all'
-                ? 'No reports match your current filter settings. Try clearing search filters.'
+              {searchQuery || clientFilter !== 'all' || projectFilter !== 'all' || statusFilter !== 'all' || activeTab !== 'all'
+                ? 'No reports match your current filter settings. Try resetting filters to view all records.'
                 : 'Generate and publish tracking health audits, Meta Ads ROAS analysis, and Looker Studio reports.'}
             </p>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus className="w-4 h-4" />}
-              onClick={handleOpenPublishModal}
-            >
-              Publish First Report
-            </Button>
+            {deliverables.length > 0 && (searchQuery || clientFilter !== 'all' || projectFilter !== 'all' || statusFilter !== 'all' || activeTab !== 'all') ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchQuery('');
+                  setClientFilter('all');
+                  setProjectFilter('all');
+                  setStatusFilter('all');
+                  setActiveTab('all');
+                }}
+              >
+                Reset Filters
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
+                onClick={handleOpenPublishModal}
+              >
+                Publish First Report
+              </Button>
+            )}
           </div>
         ) : (
           <Table columns={columns} data={filteredReports} keyExtractor={(r) => r.id} />

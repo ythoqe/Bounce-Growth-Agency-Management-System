@@ -17,7 +17,7 @@ import {
   Tag,
   Briefcase,
   Layers,
-  Sparkles,
+  Lightbulb,
   ExternalLink,
   ChevronDown,
   ChevronUp,
@@ -62,7 +62,7 @@ const PIPELINE_STAGES: {
   {
     id: 'idea',
     title: 'Ideas & Backlog',
-    icon: Sparkles,
+    icon: Lightbulb,
     headerBg: 'bg-slate-100 text-slate-800 border-slate-200',
     badgeBg: 'bg-slate-200 text-slate-700',
     description: 'Ad angles, video hooks & promo themes',
@@ -168,6 +168,7 @@ export function ContentCalendarPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<ContentPlatform | 'all'>('all');
   const [clientFilter, setClientFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<ContentStatus | 'all'>('all');
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -241,6 +242,10 @@ export function ContentCalendarPage() {
       if (clientFilter !== 'all' && item.clientId !== clientFilter) {
         return false;
       }
+      // Status filter
+      if (statusFilter !== 'all' && item.status !== statusFilter) {
+        return false;
+      }
       // Search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -254,7 +259,7 @@ export function ContentCalendarPage() {
       }
       return true;
     });
-  }, [items, platformFilter, clientFilter, searchQuery]);
+  }, [items, platformFilter, clientFilter, statusFilter, searchQuery]);
 
   // Metrics
   const metrics = useMemo(() => {
@@ -487,25 +492,69 @@ export function ContentCalendarPage() {
               placeholder="Search content angles, captions, tags, or clients..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+              className="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          {/* Client Filter */}
-          <div className="flex items-center gap-2">
-            <Briefcase className="w-4 h-4 text-slate-400" />
-            <select
-              value={clientFilter}
-              onChange={(e) => setClientFilter(e.target.value)}
-              className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Clients & Agency Brands</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.businessName}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Client Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <Briefcase className="w-4 h-4 text-slate-400" />
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Clients & Brands</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Stage:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="text-xs font-medium bg-slate-50 border border-slate-200 text-slate-700 rounded-lg px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Stages</option>
+                {PIPELINE_STAGES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(searchQuery.trim() || clientFilter !== 'all' || platformFilter !== 'all' || statusFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setClientFilter('all');
+                  setPlatformFilter('all');
+                  setStatusFilter('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            )}
           </div>
         </div>
 
@@ -559,21 +608,36 @@ export function ContentCalendarPage() {
             </div>
             <h3 className="text-base font-semibold text-slate-900">No Content Items Found</h3>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              {searchQuery || platformFilter !== 'all' || clientFilter !== 'all'
-                ? 'No content drops matched your current filter criteria. Try clearing filters.'
+              {searchQuery || platformFilter !== 'all' || clientFilter !== 'all' || statusFilter !== 'all'
+                ? 'No content drops matched your current filter criteria. Try resetting filters.'
                 : 'Get started by creating your first ad idea or campaign launch schedule.'}
             </p>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus className="w-4 h-4" />}
-              onClick={() => {
-                setTargetInitialStatus('idea');
-                setIsCreateModalOpen(true);
-              }}
-            >
-              Add First Content Idea
-            </Button>
+            {items.length > 0 && (searchQuery || platformFilter !== 'all' || clientFilter !== 'all' || statusFilter !== 'all') ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchQuery('');
+                  setPlatformFilter('all');
+                  setClientFilter('all');
+                  setStatusFilter('all');
+                }}
+              >
+                Reset Filters
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-4 h-4" />}
+                onClick={() => {
+                  setTargetInitialStatus('idea');
+                  setIsCreateModalOpen(true);
+                }}
+              >
+                Add First Content Idea
+              </Button>
+            )}
           </div>
         </Card>
       ) : viewMode === 'kanban' ? (

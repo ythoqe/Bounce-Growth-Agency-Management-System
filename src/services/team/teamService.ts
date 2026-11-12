@@ -6,6 +6,9 @@ import {
   deleteDoc,
   onSnapshot,
   Unsubscribe,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { db, auth } from '../firebase/client';
 import {
@@ -104,6 +107,27 @@ export async function createTeamMember(
   try {
     await setDoc(doc(db, COLLECTION_NAME, memberId), stripUndefined(newMember));
 
+    // If user has already signed in, immediately activate their account as team specialist
+    try {
+      const userQ = query(collection(db, 'users'), where('email', '==', newMember.email));
+      const userSnaps = await getDocs(userQ);
+      if (!userSnaps.empty) {
+        const uDoc = userSnaps.docs[0];
+        await updateDoc(doc(db, 'users', uDoc.id), {
+          role: newMember.role,
+          status: 'active',
+          title: newMember.title,
+          updatedAt: now,
+        });
+        newMember.userId = uDoc.id;
+        await updateDoc(doc(db, COLLECTION_NAME, memberId), {
+          userId: uDoc.id,
+        });
+      }
+    } catch (uErr) {
+      console.warn('[TeamService] Notice syncing user account on member create:', uErr);
+    }
+
     await logAuditEvent({
       actorUserId: actor.uid,
       actorEmail: actor.email || 'admin@bouncegrowth.agency',
@@ -119,6 +143,64 @@ export async function createTeamMember(
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `${COLLECTION_NAME}/${memberId}`);
     throw err;
+  }
+}
+
+/**
+ * Automatically syncs team specialists with their auth user documents in /users.
+ * If a team member signed in and was marked pending, this immediately activates them!
+ */
+export async function syncAllTeamMembersWithUsers(
+  actor: { uid: string; email?: string | null; role: string }
+): Promise<number> {
+  if (actor.role !== 'admin') return 0;
+
+  try {
+    const teamSnaps = await getDocs(collection(db, COLLECTION_NAME));
+    const userSnaps = await getDocs(collection(db, 'users'));
+
+    let activatedCount = 0;
+    const userDocsByEmail = new Map<string, { id: string; data: any }>();
+
+    userSnaps.forEach((d) => {
+      const uData = d.data();
+      if (uData.email) {
+        userDocsByEmail.set(uData.email.toLowerCase().trim(), { id: d.id, data: uData });
+      }
+    });
+
+    for (const tDoc of teamSnaps.docs) {
+      const tData = tDoc.data();
+      if (!tData.email) continue;
+      const normalizedEmail = tData.email.toLowerCase().trim();
+      const matchingUser = userDocsByEmail.get(normalizedEmail);
+
+      if (matchingUser) {
+        // If user document needs role or status upgrade
+        if (matchingUser.data.status !== 'active' || matchingUser.data.role !== (tData.role || 'team')) {
+          await updateDoc(doc(db, 'users', matchingUser.id), {
+            role: tData.role || 'team',
+            status: 'active',
+            title: tData.title || 'Agency Specialist',
+            updatedAt: new Date().toISOString(),
+          });
+          activatedCount++;
+        }
+
+        // Link userId in team member if missing
+        if (!tData.userId) {
+          await updateDoc(doc(db, COLLECTION_NAME, tDoc.id), {
+            userId: matchingUser.id,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    return activatedCount;
+  } catch (err) {
+    console.warn('[TeamService] Sync team members notice:', err);
+    return 0;
   }
 }
 

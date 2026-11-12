@@ -19,8 +19,10 @@ import {
   Trash2,
   Calendar,
   AlertCircle,
-  FileText,
   Building,
+  Search,
+  Filter,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -56,6 +58,13 @@ export function FinancePage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [clients, setClients] = useState<ClientProfile[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filters State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [clientFilter, setClientFilter] = useState('all');
+  const [currencyFilter, setCurrencyFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unpaid' | 'partial' | 'paid'>('all');
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('all');
 
   // Modals
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -239,6 +248,73 @@ export function FinancePage() {
       unpaidCount,
     };
   }, [invoices, payments, expenses]);
+
+  // Filtered collections
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      if (clientFilter !== 'all' && inv.clientId !== clientFilter) return false;
+      if (currencyFilter !== 'all' && inv.currency !== currencyFilter) return false;
+      if (statusFilter === 'paid' && !(inv.status === 'paid' || (inv.balanceDue ?? inv.totalAmount) <= 0)) return false;
+      if (statusFilter === 'unpaid' && (inv.status === 'paid' || inv.status === 'partially_paid' || (inv.paidAmount || 0) > 0)) return false;
+      if (statusFilter === 'partial' && !(inv.status === 'partially_paid' || ((inv.paidAmount || 0) > 0 && (inv.balanceDue ?? inv.totalAmount) > 0))) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          inv.invoiceNumber.toLowerCase().includes(q) ||
+          inv.clientName.toLowerCase().includes(q) ||
+          (inv.notes && inv.notes.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [invoices, clientFilter, currencyFilter, statusFilter, searchQuery]);
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter((pay) => {
+      if (clientFilter !== 'all' && pay.clientId !== clientFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          (pay.clientName || '').toLowerCase().includes(q) ||
+          (pay.referenceNumber && pay.referenceNumber.toLowerCase().includes(q)) ||
+          pay.paymentMethod.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [payments, clientFilter, searchQuery]);
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((exp) => {
+      if (currencyFilter !== 'all' && exp.currency !== currencyFilter) return false;
+      if (expenseCategoryFilter !== 'all' && exp.category !== expenseCategoryFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          exp.vendor.toLowerCase().includes(q) ||
+          exp.category.toLowerCase().includes(q) ||
+          exp.description.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [expenses, currencyFilter, expenseCategoryFilter, searchQuery]);
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((txn) => {
+      if (currencyFilter !== 'all' && txn.currency !== currencyFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          txn.description.toLowerCase().includes(q) ||
+          txn.category.toLowerCase().includes(q) ||
+          txn.type.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [transactions, currencyFilter, searchQuery]);
 
   if (currentRole !== 'admin') {
     return (
@@ -717,7 +793,7 @@ export function FinancePage() {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
-              ${stats.outstandingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              ৳{stats.outstandingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
               {stats.unpaidCount} invoice(s) awaiting payment
@@ -732,7 +808,7 @@ export function FinancePage() {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold tracking-tight text-emerald-700 tabular-nums">
-              ${stats.collectedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              ৳{stats.collectedTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
               {payments.length} verified payment receipt(s)
@@ -747,7 +823,7 @@ export function FinancePage() {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold tracking-tight text-rose-700 tabular-nums">
-              ${stats.expensesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              ৳{stats.expensesTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </div>
             <p className="text-[11px] text-slate-400 mt-1">
               {expenses.length} recorded expense item(s)
@@ -756,12 +832,123 @@ export function FinancePage() {
         </Card>
       </div>
 
+      {/* Finance Filters Toolbar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm space-y-3">
+        <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search invoices, clients, vendors, notes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm border border-slate-200 rounded-lg bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Client Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Client:</span>
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="all">All Clients</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Currency Filter */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium">Currency:</span>
+              <select
+                value={currencyFilter}
+                onChange={(e) => setCurrencyFilter(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="all">All (BDT & USD)</option>
+                <option value="BDT">BDT (৳)</option>
+                <option value="USD">USD ($)</option>
+              </select>
+            </div>
+
+            {/* Status Filter (Invoices) */}
+            {activeTab === 'invoices' && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-400 font-medium">Status:</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="all">All Invoices</option>
+                  <option value="unpaid">Unpaid Only</option>
+                  <option value="partial">Partially Paid</option>
+                  <option value="paid">Paid in Full</option>
+                </select>
+              </div>
+            )}
+
+            {/* Category Filter (Expenses) */}
+            {(activeTab === 'expenses' || activeTab === 'ledger') && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-400 font-medium">Category:</span>
+                <select
+                  value={expenseCategoryFilter}
+                  onChange={(e) => setExpenseCategoryFilter(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="Server & Tracking Infrastructure">Server & Infrastructure</option>
+                  <option value="Software & SaaS">Software & SaaS</option>
+                  <option value="Media & Ad Credits">Ad Credits & Media</option>
+                  <option value="Freelancer & Contractors">Freelancer / Contractors</option>
+                  <option value="Office & Miscellaneous">Office & Misc</option>
+                </select>
+              </div>
+            )}
+
+            {(searchQuery.trim() || clientFilter !== 'all' || currencyFilter !== 'all' || statusFilter !== 'all' || expenseCategoryFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setClientFilter('all');
+                  setCurrencyFilter('all');
+                  setStatusFilter('all');
+                  setExpenseCategoryFilter('all');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-medium px-2 py-1.5 rounded hover:bg-rose-50 transition-colors flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset Filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <Tabs
         tabs={[
-          { id: 'invoices', label: 'Client Invoices', count: invoices.length },
-          { id: 'payments', label: 'Payment Receipts', count: payments.length },
-          { id: 'expenses', label: 'Agency Expenses', count: expenses.length },
-          { id: 'ledger', label: 'Transaction Ledger', count: transactions.length },
+          { id: 'invoices', label: 'Client Invoices', count: filteredInvoices.length },
+          { id: 'payments', label: 'Payment Receipts', count: filteredPayments.length },
+          { id: 'expenses', label: 'Agency Expenses', count: filteredExpenses.length },
+          { id: 'ledger', label: 'Transaction Ledger', count: filteredTransactions.length },
         ]}
         activeTab={activeTab}
         onChange={setActiveTab}
@@ -774,18 +961,31 @@ export function FinancePage() {
             title="Invoicing Ledger"
             subtitle="Manage client invoices with itemized deliverables, automatic tax calculation, and partial payment recording."
           />
-          {invoices.length === 0 ? (
+          {filteredInvoices.length === 0 ? (
             <EmptyState
               icon={<Receipt className="w-6 h-6 text-slate-400" />}
-              title="No invoices currently issued"
-              description="Create structured retainer invoices with automated itemized services and payment instructions."
-              actionLabel="Create Invoice"
-              onAction={() => setIsInvoiceModalOpen(true)}
+              title={invoices.length === 0 ? "No invoices currently issued" : "No invoices match the selected filters"}
+              description={
+                invoices.length === 0
+                  ? "Create structured retainer invoices with automated itemized services and payment instructions."
+                  : "Try clearing your client, currency, or search filters to view other invoices."
+              }
+              actionLabel={invoices.length === 0 ? "Create Invoice" : "Clear Filters"}
+              onAction={() => {
+                if (invoices.length === 0) {
+                  setIsInvoiceModalOpen(true);
+                } else {
+                  setSearchQuery('');
+                  setClientFilter('all');
+                  setCurrencyFilter('all');
+                  setStatusFilter('all');
+                }
+              }}
             />
           ) : (
             <Table
               columns={invoiceColumns}
-              data={invoices}
+              data={filteredInvoices}
               keyExtractor={(inv) => inv.id}
             />
           )}
@@ -799,16 +999,20 @@ export function FinancePage() {
             title="Payment Receipts & Collections"
             subtitle="All verified client payments recorded against issued invoices."
           />
-          {payments.length === 0 ? (
+          {filteredPayments.length === 0 ? (
             <EmptyState
               icon={<CreditCard className="w-6 h-6 text-slate-400" />}
-              title="No payments recorded yet"
-              description="Payments recorded against invoices will appear here in chronological order."
+              title={payments.length === 0 ? "No payments recorded yet" : "No payments match filters"}
+              description={
+                payments.length === 0
+                  ? "Payments recorded against invoices will appear here in chronological order."
+                  : "Try clearing your client or search filter to see all recorded receipts."
+              }
             />
           ) : (
             <Table
               columns={paymentColumns}
-              data={payments}
+              data={filteredPayments}
               keyExtractor={(p) => p.id}
             />
           )}
@@ -822,18 +1026,22 @@ export function FinancePage() {
             title="Agency Operating Expenses"
             subtitle="Strictly internal agency costs (servers, proxies, software tools, freelancer fees)."
           />
-          {expenses.length === 0 ? (
+          {filteredExpenses.length === 0 ? (
             <EmptyState
               icon={<ArrowDownRight className="w-6 h-6 text-slate-400" />}
-              title="No operating expenses recorded"
-              description="Record recurring infrastructure or operational costs to monitor agency net margin."
-              actionLabel="Record Expense"
-              onAction={() => setIsExpenseModalOpen(true)}
+              title={expenses.length === 0 ? "No operating expenses recorded" : "No expenses match filters"}
+              description={
+                expenses.length === 0
+                  ? "Record recurring infrastructure or operational costs to monitor agency net margin."
+                  : "Try clearing your category or search filter to view all operating costs."
+              }
+              actionLabel={expenses.length === 0 ? "Record Expense" : undefined}
+              onAction={expenses.length === 0 ? () => setIsExpenseModalOpen(true) : undefined}
             />
           ) : (
             <Table
               columns={expenseColumns}
-              data={expenses}
+              data={filteredExpenses}
               keyExtractor={(exp) => exp.id}
             />
           )}
@@ -847,16 +1055,20 @@ export function FinancePage() {
             title="Financial Cashflow Ledger"
             subtitle="Combined ledger of inbound client payments and outbound operational expenses."
           />
-          {transactions.length === 0 ? (
+          {filteredTransactions.length === 0 ? (
             <EmptyState
               icon={<DollarSign className="w-6 h-6 text-slate-400" />}
-              title="Ledger is empty"
-              description="Income and expense records will automatically generate here when payments or expenses are logged."
+              title={transactions.length === 0 ? "Ledger is empty" : "No transactions match filters"}
+              description={
+                transactions.length === 0
+                  ? "Income and expense records will automatically generate here when payments or expenses are logged."
+                  : "Try clearing your currency or search filter."
+              }
             />
           ) : (
             <Table
               columns={transactionColumns}
-              data={transactions}
+              data={filteredTransactions}
               keyExtractor={(t) => t.id}
             />
           )}

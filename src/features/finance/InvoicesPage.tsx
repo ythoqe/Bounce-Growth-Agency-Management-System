@@ -80,6 +80,8 @@ export function InvoicesPage() {
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid' | 'partial'>('all');
+  const [clientFilter, setClientFilter] = useState('all');
+  const [currencyFilter, setCurrencyFilter] = useState('all');
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -364,6 +366,9 @@ export function InvoicesPage() {
 
       if (!matchesSearch) return false;
 
+      if (clientFilter !== 'all' && inv.clientId !== clientFilter) return false;
+      if (currencyFilter !== 'all' && inv.currency !== currencyFilter) return false;
+
       // Status filter
       if (statusFilter === 'all') return true;
       if (statusFilter === 'paid') return inv.status === 'paid' || inv.balanceDue <= 0;
@@ -374,7 +379,7 @@ export function InvoicesPage() {
 
       return true;
     });
-  }, [invoices, searchQuery, statusFilter]);
+  }, [invoices, searchQuery, statusFilter, clientFilter, currencyFilter]);
 
   if (currentRole !== 'admin') {
     return (
@@ -436,41 +441,88 @@ export function InvoicesPage() {
 
       {/* Filter and Search Bar */}
       <Card>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-1">
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search invoice # or client..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-            />
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-3 p-1">
+          <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search invoice # or client..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            {/* Client Filter */}
+            {clients.length > 0 && (
+              <select
+                value={clientFilter}
+                onChange={(e) => setClientFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs font-medium border border-slate-200 rounded-lg bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[170px]"
+              >
+                <option value="all">All Clients ({clients.length})</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Currency Filter */}
+            <select
+              value={currencyFilter}
+              onChange={(e) => setCurrencyFilter(e.target.value)}
+              className="px-2.5 py-1.5 text-xs font-medium border border-slate-200 rounded-lg bg-slate-50 text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">All Currencies</option>
+              <option value="BDT">BDT (৳)</option>
+              <option value="USD">USD ($)</option>
+            </select>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-            <span className="text-xs text-slate-500 font-medium whitespace-nowrap flex items-center gap-1">
-              <Filter className="w-3.5 h-3.5" /> Status:
-            </span>
-            {(['all', 'unpaid', 'partial', 'paid'] as const).map((filterKey) => (
+          <div className="flex items-center gap-2 w-full lg:w-auto overflow-x-auto justify-between lg:justify-end">
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              <span className="text-xs text-slate-500 font-medium whitespace-nowrap flex items-center gap-1">
+                <Filter className="w-3.5 h-3.5" /> Status:
+              </span>
+              {(['all', 'unpaid', 'partial', 'paid'] as const).map((filterKey) => (
+                <button
+                  key={filterKey}
+                  onClick={() => setStatusFilter(filterKey)}
+                  className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
+                    statusFilter === filterKey
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {filterKey === 'all'
+                    ? `All (${invoices.length})`
+                    : filterKey === 'unpaid'
+                    ? `Unpaid (${invoices.filter((i) => i.status !== 'paid' && i.status !== 'partially_paid' && i.paidAmount === 0).length})`
+                    : filterKey === 'partial'
+                    ? `Partial (${invoices.filter((i) => i.status === 'partially_paid' || (i.paidAmount > 0 && i.balanceDue > 0)).length})`
+                    : `Paid (${invoices.filter((i) => i.status === 'paid' || i.balanceDue <= 0).length})`}
+                </button>
+              ))}
+            </div>
+
+            {/* Reset Button */}
+            {(clientFilter !== 'all' || currencyFilter !== 'all' || statusFilter !== 'all' || searchQuery.trim() !== '') && (
               <button
-                key={filterKey}
-                onClick={() => setStatusFilter(filterKey)}
-                className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
-                  statusFilter === filterKey
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
+                onClick={() => {
+                  setClientFilter('all');
+                  setCurrencyFilter('all');
+                  setStatusFilter('all');
+                  setSearchQuery('');
+                }}
+                className="text-xs text-rose-600 hover:text-rose-800 font-medium underline flex items-center gap-1 whitespace-nowrap ml-2"
               >
-                {filterKey === 'all'
-                  ? `All (${invoices.length})`
-                  : filterKey === 'unpaid'
-                  ? `Unpaid (${invoices.filter((i) => i.status !== 'paid' && i.status !== 'partially_paid' && i.paidAmount === 0).length})`
-                  : filterKey === 'partial'
-                  ? `Partial (${invoices.filter((i) => i.status === 'partially_paid' || (i.paidAmount > 0 && i.balanceDue > 0)).length})`
-                  : `Paid (${invoices.filter((i) => i.status === 'paid' || i.balanceDue <= 0).length})`}
+                <X className="w-3 h-3" />
+                Reset
               </button>
-            ))}
+            )}
           </div>
         </div>
       </Card>
